@@ -17,7 +17,7 @@ const { createCanvas, loadImage } = require('@napi-rs/canvas');
 require('dotenv').config();
 
 // 👑 اكتب آيدي حسابك الشخصي هنا (حتى يكون التصفير حصري لك أنت فقط)
-const OWNER_ID = 'ضع_ايدي_حسابك_هنا';
+const OWNER_ID = '771475413838594110';
 
 const client = new Client({
     intents: [
