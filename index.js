@@ -21,7 +21,7 @@ const client = new Client({
     ]
 });
 
-// تخزين ملكية الرومات الموقتة
+// تخزين ملكية الرومات المؤقتة
 const tempChannels = new Map();
 
 client.on('ready', () => {
@@ -34,12 +34,11 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     const logChannelId = process.env.LOG_CHANNEL_ID;
     const logChannel = logChannelId ? guild.channels.cache.get(logChannelId) : null;
 
-    // أ. إذا دخل الشخص روم الإنشاء
+    // أ. إنشاء الروم عند دخول روم الإنشاء
     if (newState.channelId === process.env.JOIN_CHANNEL_ID) {
         const member = newState.member;
 
         try {
-            // إنشاء الروم الموقت
             const tempChannel = await guild.channels.create({
                 name: `🔊 | ${member.user.username}`,
                 type: ChannelType.GuildVoice,
@@ -56,10 +55,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
                 ]
             });
 
-            // حفظ صاحب الروم
             tempChannels.set(tempChannel.id, member.id);
-
-            // نقل العضو للروم الجديد
             await member.voice.setChannel(tempChannel);
 
             // 📜 لوق إنشاء الروم
@@ -67,7 +63,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
                 logChannel.send(`🟢 **تم إنشاء روم مؤقت:** <#${tempChannel.id}> بواسطة ${member}`);
             }
 
-            // بناء الأزرار
+            // بناء لوحة التحكم
             const row1 = new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId('btn_lock').setLabel('قفل').setStyle(ButtonStyle.Secondary),
                 new ButtonBuilder().setCustomId('btn_unlock').setLabel('فتح').setStyle(ButtonStyle.Secondary),
@@ -89,7 +85,6 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
                 new ButtonBuilder().setCustomId('btn_delete').setLabel('حذف').setStyle(ButtonStyle.Danger)
             );
 
-            // إرسال اللوحة داخل شات الروم الصوتي
             await tempChannel.send({
                 content: `<@${member.id}>`,
                 components: [row1, row2, row3]
@@ -108,41 +103,38 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
             tempChannels.delete(channel.id);
             await channel.delete().catch(() => {});
 
-            // 📜 لوق حذف الروم
             if (logChannel) {
                 logChannel.send(`🔴 **تم حذف الروم المؤقت:** \`${channelName}\``);
             }
         }
     }
 
-    // ج. لوق خروج أو طرد عضو من الصوت
+    // ج. لوق خروج أو طرد عضو من الروم الصوتي
     if (oldState.channelId && !newState.channelId) {
         if (logChannel) {
             logChannel.send(`🚪 **خروج/طرد:** خرج ${oldState.member} من الروم الصوتية \`${oldState.channel ? oldState.channel.name : 'صوتية'}\``);
         }
     }
 
-    // د. لوق الميوت والدفن (سواء ميوت مايك أو سماعة)
+    // د. لوق الميوت والدفن الإداري على مستوى السيرفر (Server Mute / Server Deafen)
     if (oldState.channelId && newState.channelId && oldState.channelId === newState.channelId) {
         if (logChannel) {
-            // ميوت أو فك ميوت المايك
-            if (!oldState.mute && newState.mute) {
-                logChannel.send(`🔇 **ميوت:** تم إعطاء ميوت للمستخدم ${newState.member} في <#${newState.channelId}>`);
-            } else if (oldState.mute && !newState.mute) {
-                logChannel.send(`🔊 **فك ميوت:** تم فك الميوت عن ${newState.member} في <#${newState.channelId}>`);
+            if (!oldState.serverMute && newState.serverMute) {
+                logChannel.send(`🔇 **Server Mute:** تم إعطاء ميوت سيرفر للمستخدم ${newState.member} في <#${newState.channelId}>`);
+            } else if (oldState.serverMute && !newState.serverMute) {
+                logChannel.send(`🔊 **فك Server Mute:** تم فك ميوت السيرفر عن ${newState.member} في <#${newState.channelId}>`);
             }
 
-            // إغلاق أو فتح السماعة (Deaf)
-            if (!oldState.deaf && newState.deaf) {
-                logChannel.send(`🎧 **دفن:** تم إغلاق السماعة (Deaf) لـ ${newState.member} في <#${newState.channelId}>`);
-            } else if (oldState.deaf && !newState.deaf) {
-                logChannel.send(`🎧 **فك الدفن:** تم فتح السماعة لـ ${newState.member} في <#${newState.channelId}>`);
+            if (!oldState.serverDeaf && newState.serverDeaf) {
+                logChannel.send(`🎧 **Server Deafen:** تم إغلاق السماعة (Server Deaf) لـ ${newState.member} في <#${newState.channelId}>`);
+            } else if (oldState.serverDeaf && !newState.serverDeaf) {
+                logChannel.send(`🎧 **فك Server Deafen:** تم فتح السماعة لـ ${newState.member} في <#${newState.channelId}>`);
             }
         }
     }
 });
 
-// 3. التحكم بالأزرار والنوافذ التفاعلية
+// 2. التحكم بالأزرار والنوافذ التفاعلية
 client.on('interactionCreate', async (interaction) => {
     const logChannelId = process.env.LOG_CHANNEL_ID;
     const logChannel = logChannelId ? interaction.guild.channels.cache.get(logChannelId) : null;
@@ -306,6 +298,7 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
+// 🌐 خادم Express متوافق مع Render Free
 const express = require('express');
 const app = express();
 const port = process.env.PORT || 3000;
@@ -314,7 +307,7 @@ app.get('/', (req, res) => {
     res.send('Bot is running!');
 });
 
-app.listen(port, () => {
+app.listen(port, '0.0.0.0', () => {
     console.log(`🌐 Web server running on port ${port}`);
 });
 
