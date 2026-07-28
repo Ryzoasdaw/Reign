@@ -16,6 +16,9 @@ const {
 const { createCanvas, loadImage } = require('@napi-rs/canvas');
 require('dotenv').config();
 
+// 👑 اكتب آيدي حسابك الشخصي هنا (حتى يكون التصفير حصري لك أنت فقط)
+const OWNER_ID = 'ضع_ايدي_حسابك_هنا';
+
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -37,7 +40,7 @@ let leaderboardMessageId = null;
 client.once('ready', async () => {
     console.log(`🤖 البوت متصل باسم: ${client.user.tag}`);
 
-    // 1. فحص الرومات الصوتية وتسجيل أي شخص موجود حالياً فور اشتغال البوت
+    // 1. تسجيل كل شخص متواجد بالصوت فور تشغيل البوت
     for (const guild of client.guilds.cache.values()) {
         for (const channel of guild.channels.cache.values()) {
             if (channel.isVoiceBased()) {
@@ -53,7 +56,7 @@ client.once('ready', async () => {
         }
     }
 
-    // 2. تحديث لوحة التوب 10 كل دقيقة أو ساعة حسب رغبتك (هنا كل دقيقة للتجربة)
+    // 2. تحديث لوحة التوب 10 تلقائياً كل دقيقة
     updateHourlyLeaderboard();
     setInterval(() => {
         updateHourlyLeaderboard();
@@ -101,24 +104,33 @@ async function updateControlPanel(channel, ownerId) {
     return { components: [row1, row2, row3, selectMenu] };
 }
 
-// دالة تحويل الوقت بشكل دقيق (ساعات - دقائق - ثواني)
+// ✨ دالة تنسيق الوقت الذكية (تخفي الثواني عند وصول ساعة فأكثر)
 function formatTime(ms) {
-    if (!ms || ms < 1000) return '0m';
-    const totalSeconds = Math.floor(ms / 1000);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
+    if (!ms || ms < 1000) return '0s';
 
-    if (hours > 0) {
-        return `${hours}h ${minutes}m`;
-    } else if (minutes > 0) {
-        return `${minutes}m ${seconds}s`;
-    } else {
-        return `${seconds}s`;
+    const seconds = Math.floor((ms / 1000) % 60);
+    const minutes = Math.floor((ms / (1000 * 60)) % 60);
+    const hours = Math.floor((ms / (1000 * 60 * 60)) % 24);
+    const days = Math.floor(ms / (1000 * 60 * 60 * 24));
+
+    const parts = [];
+
+    // إذا وصل لساعة فأكثر -> نلغي الثواني
+    if (days > 0 || hours > 0) {
+        if (days > 0) parts.push(`${days}d`);
+        if (hours > 0) parts.push(`${hours}h`);
+        if (minutes > 0) parts.push(`${minutes}m`);
+    } 
+    // إذا أقل من ساعة -> نعرض الدقائق والثواني
+    else {
+        if (minutes > 0) parts.push(`${minutes}m`);
+        if (seconds > 0 || parts.length === 0) parts.push(`${seconds}s`);
     }
+
+    return parts.join(' ');
 }
 
-// دالة حساب الوقت الكلي لشخص حتى اللحظة الحالية
+// دالة حساب الوقت الكلي لشخص
 function getUserTotalTime(userId) {
     const data = userVoiceActivity.get(userId);
     if (!data) return 0;
@@ -130,7 +142,7 @@ function getUserTotalTime(userId) {
     return data.voiceTime + currentSession;
 }
 
-// دالة رسم Canvas
+// دالة رسم Canvas مع إظهار صور جميع الأعضاء
 async function generateLeaderboardCanvas(topUsers, guild) {
     const width = 1000;
     const height = 550;
@@ -178,7 +190,7 @@ async function generateLeaderboardCanvas(topUsers, guild) {
         } catch (e) {}
 
         ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 32px sans-serif';
+        ctx.font = 'bold 28px sans-serif';
         ctx.fillText(formatTime(top1.time), 50, 310);
 
         ctx.fillStyle = '#22273e';
@@ -192,7 +204,7 @@ async function generateLeaderboardCanvas(topUsers, guild) {
         ctx.fill();
     }
 
-    // باقي الأعضاء #2 إلى #10
+    // باقي الأعضاء #2 إلى #10 (مع صور البروفايل الخاصة بهم)
     const startX = 340;
     let currentY = 95;
     const cardWidth = 300;
@@ -211,38 +223,53 @@ async function generateLeaderboardCanvas(topUsers, guild) {
 
         ctx.fillStyle = '#5865f2';
         ctx.font = 'bold 14px sans-serif';
-        ctx.fillText(`#${i + 1}`, colX + 15, rowY + 30);
+        ctx.fillText(`#${i + 1}`, colX + 12, rowY + 43);
 
         if (user) {
+            // رسم صورة البروفايل للمراكز من 2 إلى 10
+            try {
+                const avatarUrl = user.member ? user.member.user.displayAvatarURL({ extension: 'png', size: 64 }) : '';
+                if (avatarUrl) {
+                    const avatar = await loadImage(avatarUrl);
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.arc(colX + 60, rowY + 37, 18, 0, Math.PI * 2);
+                    ctx.closePath();
+                    ctx.clip();
+                    ctx.drawImage(avatar, colX + 42, rowY + 19, 36, 36);
+                    ctx.restore();
+                }
+            } catch (e) {}
+
             ctx.fillStyle = '#ffffff';
-            ctx.font = '14px sans-serif';
+            ctx.font = '13px sans-serif';
             const name = user.member ? user.member.displayName : 'Unknown';
-            ctx.fillText(name.substring(0, 12), colX + 45, rowY + 30);
+            ctx.fillText(name.substring(0, 10), colX + 85, rowY + 33);
 
             ctx.fillStyle = '#00f2fe';
-            ctx.font = 'bold 14px sans-serif';
-            ctx.fillText(formatTime(user.time), colX + cardWidth - 85, rowY + 30);
+            ctx.font = 'bold 13px sans-serif';
+            ctx.fillText(formatTime(user.time), colX + cardWidth - 85, rowY + 33);
 
             ctx.fillStyle = '#22273e';
             ctx.beginPath();
-            ctx.roundRect(colX + 45, rowY + 45, 220, 4, 2);
+            ctx.roundRect(colX + 85, rowY + 45, 190, 4, 2);
             ctx.fill();
 
             ctx.fillStyle = '#00f2fe';
             ctx.beginPath();
-            ctx.roundRect(colX + 45, rowY + 45, 120, 4, 2);
+            ctx.roundRect(colX + 85, rowY + 45, 100, 4, 2);
             ctx.fill();
         } else {
             ctx.fillStyle = '#4a4d68';
             ctx.font = '12px sans-serif';
-            ctx.fillText('لا يوجد لاعب', colX + 45, rowY + 35);
+            ctx.fillText('لا يوجد لاعب', colX + 85, rowY + 40);
         }
     }
 
     return canvas.toBuffer('image/png');
 }
 
-// دالة التحديث التلقائي
+// دالة التحديث
 async function updateHourlyLeaderboard() {
     const leaderboardChannelId = process.env.LEADERBOARD_CHANNEL_ID;
     if (!leaderboardChannelId) return;
@@ -291,7 +318,35 @@ async function updateHourlyLeaderboard() {
     }
 }
 
-// حدث دخول وخروج الصوت تجميع النقاط والوقت
+// أمر تصفير نصي (!reset) لك أنت فقط
+client.on('messageCreate', async (message) => {
+    if (message.author.bot) return;
+
+    if (message.content === '!reset') {
+        if (message.author.id !== OWNER_ID) {
+            return message.reply('❌ هذا الأمر مخصص لصاحب البوت فقط!');
+        }
+
+        userVoiceActivity.clear();
+
+        for (const guild of client.guilds.cache.values()) {
+            for (const channel of guild.channels.cache.values()) {
+                if (channel.isVoiceBased()) {
+                    for (const [memberId, member] of channel.members) {
+                        if (!member.user.bot) {
+                            userVoiceActivity.set(memberId, { voiceTime: 0, joinTimestamp: Date.now() });
+                        }
+                    }
+                }
+            }
+        }
+
+        await updateHourlyLeaderboard();
+        return message.reply('🔄 **تم تصفير جميع النقاط بنجاح!**');
+    }
+});
+
+// حدث التواجد بالصوت
 client.on('voiceStateUpdate', async (oldState, newState) => {
     const guild = newState.guild || oldState.guild;
     const logChannelId = process.env.LOG_CHANNEL_ID;
@@ -303,13 +358,10 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     const userId = member.id;
     const userData = userVoiceActivity.get(userId) || { voiceTime: 0, joinTimestamp: null };
 
-    // 1. دخول روم صوتي
     if (!oldState.channelId && newState.channelId) {
         userData.joinTimestamp = Date.now();
         userVoiceActivity.set(userId, userData);
-    } 
-    // 2. خروج من روم صوتي
-    else if (oldState.channelId && !newState.channelId) {
+    } else if (oldState.channelId && !newState.channelId) {
         if (userData.joinTimestamp) {
             userData.voiceTime += (Date.now() - userData.joinTimestamp);
             userData.joinTimestamp = null;
@@ -317,7 +369,6 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         }
     }
 
-    // إنشاء الرومات المؤقتة
     if (newState.channelId && newState.channelId === process.env.JOIN_CHANNEL_ID) {
         try {
             const tempChannel = await guild.channels.create({
@@ -361,7 +412,6 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         }
     }
 
-    // حذف الرومات المؤقتة عند الإخلاء
     if (oldState.channelId && tempChannels.has(oldState.channelId)) {
         const channel = oldState.guild.channels.cache.get(oldState.channelId);
         if (channel && channel.members.size === 0) {
@@ -389,19 +439,19 @@ client.on('interactionCreate', async (interaction) => {
         const formatted = formatTime(totalMs);
         
         return interaction.reply({ 
-            content: `🎙️ مجموع تواجدك الصوتي الحالي: **${formatted}**`, 
+            content: `🎙️ **مجموع تواجدك الصوتي الحالي:** \`${formatted}\``, 
             ephemeral: true 
         });
     }
 
+    // زر التصفير (مفعل فقط للآيدي الخاص بك)
     if (interaction.isButton() && interaction.customId === 'btn_reset_points') {
-        if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-            return interaction.reply({ content: '❌ هذا الأمر خاص بالإدارة فقط!', ephemeral: true });
+        if (interaction.user.id !== OWNER_ID) {
+            return interaction.reply({ content: '❌ هذا الزر مخصص لصاحب البوت فقط!', ephemeral: true });
         }
 
         userVoiceActivity.clear();
 
-        // إعادة تسجيل المتواجدين حالياً
         for (const guild of client.guilds.cache.values()) {
             for (const channel of guild.channels.cache.values()) {
                 if (channel.isVoiceBased()) {
@@ -415,7 +465,7 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         await updateHourlyLeaderboard();
-        return interaction.reply({ content: '🔄 تم تصفير جميع النقاط والوقات بنجاح!', ephemeral: true });
+        return interaction.reply({ content: '🔄 تم تصفير جميع النقاط بنجاح!', ephemeral: true });
     }
 
     const channel = interaction.channel;
