@@ -29,14 +29,15 @@ const client = new Client({
     ]
 });
 
-// حفظ بيانات الرومات المؤقتة
-const tempChannels = new Map(); // voiceChannelId -> { ownerId, textChannelId }
+// Map لتخزين الرومات الصوتية المؤقتة فقط ومعرفة مالكها (voiceChannelId -> ownerId)
+const tempVoiceChannels = new Map(); 
 const userVoiceActivity = new Map(); 
-const leaderboardMessages = new Map(); // channelId -> messageId
+const leaderboardMessages = new Map(); 
 
 client.once('ready', async () => {
     console.log(`🤖 البوت متصل باسم: ${client.user.tag}`);
 
+    // تتبع وقت الأعضاء الموجودين بالصوت
     for (const guild of client.guilds.cache.values()) {
         for (const channel of guild.channels.cache.values()) {
             if (channel.isVoiceBased()) {
@@ -52,21 +53,23 @@ client.once('ready', async () => {
         }
     }
 
+    // إرسال اللوحة الثابتة في قناة الكنترول الدائمة
+    setupPermanentControlPanel();
+
+    // تحديث الليدربورد
     updateLeaderboard();
     setInterval(() => {
         updateLeaderboard();
     }, 60 * 60 * 1000); 
 });
 
-// 🎨 بناء لوحة التحكم المطابقة للصور بجميع أزرارها وتقسيماتها
+// 🎨 بناء لوحة التحكم الزرقاء
 function buildControlPanelEmbed() {
     const embed = new EmbedBuilder()
         .setColor(0x1E1F22)
         .setTitle('Temp Voice Control Panel')
-        .setDescription('Use these controls while you are inside your temporary voice room.\n\n**Room Controls**')
-        .setFooter({ text: 'Mythic Control System' });
+        .setDescription('Use these controls while you are inside your temporary voice room.\n\n**Room Controls**');
 
-    // السطر الأول: أزرار التحكم بالروم
     const row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('btn_lock').setLabel('Lock').setEmoji('🔒').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('btn_unlock').setLabel('Open').setEmoji('🔓').setStyle(ButtonStyle.Secondary),
@@ -74,27 +77,23 @@ function buildControlPanelEmbed() {
         new ButtonBuilder().setCustomId('btn_show').setLabel('Show').setEmoji('👁️').setStyle(ButtonStyle.Secondary)
     );
 
-    // السطر الثاني
     const row2 = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('btn_rename').setLabel('Rename Room').setEmoji('✏️').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('btn_limit').setLabel('Change Limit').setEmoji('👥').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('btn_region').setLabel('Change Region').setEmoji('🔄').setStyle(ButtonStyle.Secondary)
     );
 
-    // السطر الثالث
     const row3 = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('btn_status').setLabel('Voice Status').setEmoji('💬').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('btn_music').setLabel('Music Bot').setEmoji('🎵').setStyle(ButtonStyle.Secondary)
     );
 
-    // السطر الرابع: أزرار التحكم بالأعضاء (Member Controls)
     const row4 = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('btn_kick').setLabel('Kick Member').setEmoji('❌').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('btn_block').setLabel('Block Member').setEmoji('🚫').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('btn_unblock').setLabel('Unblock Member').setEmoji('🔓').setStyle(ButtonStyle.Secondary)
     );
 
-    // السطر الخامس: أزرار الثقة والدعوات والرتب
     const row5 = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('btn_invite').setLabel('Invite Member').setEmoji('✉️').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('btn_trust').setLabel('Trust Member').setEmoji('🟢').setStyle(ButtonStyle.Success),
@@ -102,7 +101,6 @@ function buildControlPanelEmbed() {
         new ButtonBuilder().setCustomId('btn_allow_role').setLabel('Allow Role').setEmoji('👑').setStyle(ButtonStyle.Secondary)
     );
 
-    // السطر السادس: الرتب المسموحة
     const row6 = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('btn_remove_role').setLabel('Remove Role').setEmoji('➖').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('btn_view_roles').setLabel('View Allowed Roles').setEmoji('📜').setStyle(ButtonStyle.Secondary)
@@ -111,7 +109,30 @@ function buildControlPanelEmbed() {
     return { embeds: [embed], components: [row1, row2, row3, row4, row5, row6] };
 }
 
-// ✨ تنسيق الوقت للوحة الصدارة
+// 📌 تثبيت أو تحديث رسالة التحكم في القناة الدائمة
+async function setupPermanentControlPanel() {
+    const controlChannelId = process.env.CONTROL_CHANNEL_ID;
+    if (!controlChannelId) return;
+
+    const channel = client.channels.cache.get(controlChannelId);
+    if (!channel) return;
+
+    try {
+        const panelData = buildControlPanelEmbed();
+        const messages = await channel.messages.fetch({ limit: 10 }).catch(() => null);
+        
+        let existingMsg = messages ? messages.find(m => m.author.id === client.user.id && m.embeds.length > 0 && m.embeds[0].title === 'Temp Voice Control Panel') : null;
+
+        if (existingMsg) {
+            await existingMsg.edit(panelData);
+        } else {
+            await channel.send(panelData);
+        }
+    } catch (error) {
+        console.error('خطأ أثناء إرسال لوحة الكنترول الدائمة:', error);
+    }
+}
+
 function formatTime(ms) {
     if (!ms || ms < 1000) return '0s';
     const seconds = Math.floor((ms / 1000) % 60);
@@ -281,7 +302,6 @@ async function generateLeaderboardCanvas(topUsers, guild) {
     return canvas.toBuffer('image/png');
 }
 
-// 🔄 تحديث لوحة الصدارة فقط في الرومات المخصصة
 async function updateLeaderboard() {
     const channelIds = [
         process.env.LEADERBOARD_CHANNEL_ID_1,
@@ -291,12 +311,11 @@ async function updateLeaderboard() {
     if (channelIds.length === 0) return;
 
     for (const channelId of channelIds) {
+        // حماية: عدم إرسال الصدارة إطلاقاً في روم الكنترول الدائم
+        if (channelId === process.env.CONTROL_CHANNEL_ID) continue;
+
         const channel = client.channels.cache.get(channelId);
         if (!channel) continue;
-
-        // التأكد التام أن الروم ليس روم كنترول مؤقت
-        const isTempControlChannel = Array.from(tempChannels.values()).some(data => data.textChannelId === channelId);
-        if (isTempControlChannel) continue;
 
         const topData = [];
 
@@ -342,7 +361,7 @@ async function updateLeaderboard() {
     }
 }
 
-// 🔊 إنشاء الروم الصوتي + إرسال لوحة التحكم الزرقاء داخل #control
+// إنشاء/حذف الرومات الصوتية المؤقتة فقط
 client.on('voiceStateUpdate', async (oldState, newState) => {
     const guild = newState.guild || oldState.guild;
     const member = newState.member || oldState.member;
@@ -363,12 +382,11 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         }
     }
 
-    // 🟢 دخول روم إنشاء الصوت
+    // إنشاء روم صوتي فقط
     if (newState.channelId && newState.channelId === process.env.JOIN_CHANNEL_ID) {
         try {
             const parentCategory = process.env.CATEGORY_ID || null;
 
-            // 1. إنشاء الروم الصوتي
             const tempVoiceChannel = await guild.channels.create({
                 name: `🔊 | ${member.user.username}`,
                 type: ChannelType.GuildVoice,
@@ -379,53 +397,25 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
                 ]
             });
 
-            // 2. إنشاء روم التحكم النصي (#control)
-            const tempTextChannel = await guild.channels.create({
-                name: `control`,
-                type: ChannelType.GuildText,
-                parent: parentCategory,
-                permissionOverwrites: [
-                    { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
-                    { id: member.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] }
-                ]
-            });
-
-            // حفظ بيانات الروم
-            tempChannels.set(tempVoiceChannel.id, {
-                ownerId: member.id,
-                textChannelId: tempTextChannel.id
-            });
-
-            // نقل العضو للروم الصوتي
+            tempVoiceChannels.set(tempVoiceChannel.id, member.id);
             await member.voice.setChannel(tempVoiceChannel).catch(() => {});
 
-            // 3. إرسال لوحة الكنترول الزرقاء داخل روم #control
-            const panelData = buildControlPanelEmbed();
-            await tempTextChannel.send(panelData);
-
         } catch (error) {
-            console.error('خطأ أثناء إنشاء الروم:', error);
+            console.error('خطأ أثناء إنشاء الروم الصوتي:', error);
         }
     }
 
-    // 🔴 حذف الرومات عند الخروج
-    if (oldState.channelId && tempChannels.has(oldState.channelId)) {
+    // حذف الروم عند خروج الجميع
+    if (oldState.channelId && tempVoiceChannels.has(oldState.channelId)) {
         const voiceChannel = oldState.guild.channels.cache.get(oldState.channelId);
         if (voiceChannel && voiceChannel.members.size === 0) {
-            const channelData = tempChannels.get(oldState.channelId);
-
-            if (channelData && channelData.textChannelId) {
-                const textChannel = oldState.guild.channels.cache.get(channelData.textChannelId);
-                if (textChannel) await textChannel.delete().catch(() => {});
-            }
-
-            tempChannels.delete(voiceChannel.id);
+            tempVoiceChannels.delete(voiceChannel.id);
             await voiceChannel.delete().catch(() => {});
         }
     }
 });
 
-// 🎮 إدارة التفاعلات بالأزرار والقوائم
+// التعامل مع الأزرار والتحقق من المالك
 client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton() && interaction.customId === 'btn_my_points') {
         const totalMs = getUserTotalTime(interaction.user.id);
@@ -440,26 +430,21 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.reply({ content: '🔄 تم تصفير البيانات بنجاح!', ephemeral: true });
     }
 
-    let voiceChannel = interaction.member.voice?.channel;
-    let channelInfo = null;
+    // التأكد التام من أن الضغط تم من المالك لـ روم صوتي مؤقت متواجد فيه حالياً
+    const userVoiceChannel = interaction.member.voice?.channel;
 
-    if (voiceChannel && tempChannels.has(voiceChannel.id)) {
-        channelInfo = tempChannels.get(voiceChannel.id);
-    } else {
-        for (const [vId, data] of tempChannels.entries()) {
-            if (data.textChannelId === interaction.channelId) {
-                voiceChannel = interaction.guild.channels.cache.get(vId);
-                channelInfo = data;
-                break;
-            }
+    if (interaction.isButton() || interaction.isUserSelectMenu() || interaction.isRoleSelectMenu() || interaction.isModalSubmit()) {
+        if (!userVoiceChannel || !tempVoiceChannels.has(userVoiceChannel.id)) {
+            return interaction.reply({ content: '⚠️ يجب أن تكون متواجداً داخل رومك الصوتي المؤقت ليمكنك استخدام لوحة التحكم!', ephemeral: true });
+        }
+
+        const roomOwnerId = tempVoiceChannels.get(userVoiceChannel.id);
+        if (interaction.user.id !== roomOwnerId) {
+            return interaction.reply({ content: '❌ أنت لست مالك هذا الروم الصوتي المؤقت!', ephemeral: true });
         }
     }
 
-    if (!voiceChannel || !channelInfo) return;
-
-    if (interaction.user.id !== channelInfo.ownerId) {
-        return interaction.reply({ content: '❌ أنت لست صاحب هذا الروم!', ephemeral: true });
-    }
+    const voiceChannel = userVoiceChannel;
 
     if (interaction.isButton()) {
         const customId = interaction.customId;
@@ -500,19 +485,19 @@ client.on('interactionCreate', async (interaction) => {
         switch (customId) {
             case 'btn_lock':
                 await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { Connect: false });
-                await interaction.editReply({ content: '🔒 تم قفل الروم الصوتي.' });
+                await interaction.editReply({ content: '🔒 تم قفل رومك الصوتي.' });
                 break;
             case 'btn_unlock':
                 await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { Connect: true });
-                await interaction.editReply({ content: '🔓 تم فتح الروم الصوتي.' });
+                await interaction.editReply({ content: '🔓 تم فتح رومك الصوتي.' });
                 break;
             case 'btn_hide':
                 await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: false });
-                await interaction.editReply({ content: '👁️‍🗨️ تم إخفاء الروم الصوتي.' });
+                await interaction.editReply({ content: '👁️‍🗨️ تم إخفاء رومك الصوتي.' });
                 break;
             case 'btn_show':
                 await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: true });
-                await interaction.editReply({ content: '👁️ تم إظهار الروم الصوتي.' });
+                await interaction.editReply({ content: '👁️ تم إظهار رومك الصوتي.' });
                 break;
             case 'btn_region':
                 await interaction.editReply({ content: '🌐 يمكنك تغيير المنطقة من إعدادات الروم الصوتي مباشرة.' });
@@ -599,7 +584,6 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
-// Express Server
 const express = require('express');
 const app = express();
 const port = process.env.PORT || 3000;
