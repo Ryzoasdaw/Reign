@@ -276,9 +276,13 @@ client.on('interactionCreate', async (interaction) => {
         const userTag = interaction.user.tag;
         const channelName = channel.name;
 
+        // استجابة فورية للأزرار التي لا تفتح مودال لمنع خطأ 3 ثواني
+        if (interaction.customId !== 'btn_name' && interaction.customId !== 'btn_limit') {
+            await interaction.deferReply({ ephemeral: true }).catch(() => {});
+        }
+
         switch (interaction.customId) {
             case 'btn_lock':
-                await interaction.deferReply({ ephemeral: true });
                 await channel.permissionOverwrites.edit(interaction.guild.id, { Connect: false });
                 await interaction.editReply({ content: '🔒 تم قفل الروم.' });
                 if (logChannel) {
@@ -293,7 +297,6 @@ client.on('interactionCreate', async (interaction) => {
                 break;
 
             case 'btn_unlock':
-                await interaction.deferReply({ ephemeral: true });
                 await channel.permissionOverwrites.edit(interaction.guild.id, { Connect: true });
                 await interaction.editReply({ content: '🔓 تم فتح الروم.' });
                 if (logChannel) {
@@ -308,7 +311,6 @@ client.on('interactionCreate', async (interaction) => {
                 break;
 
             case 'btn_hide':
-                await interaction.deferReply({ ephemeral: true });
                 await channel.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: false });
                 await interaction.editReply({ content: '👻 تم إخفاء الروم.' });
                 if (logChannel) {
@@ -323,7 +325,6 @@ client.on('interactionCreate', async (interaction) => {
                 break;
 
             case 'btn_show':
-                await interaction.deferReply({ ephemeral: true });
                 await channel.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: true });
                 await interaction.editReply({ content: '👁️ تم إظهار الروم.' });
                 if (logChannel) {
@@ -354,7 +355,6 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             case 'btn_allow': {
-                await interaction.deferReply({ ephemeral: true });
                 const targetId = selectedUsers.get(channel.id);
                 if (!targetId || targetId === 'none') return interaction.editReply({ content: '❌ يرجى اختيار العضو من القائمة المنسدلة أولاً!' });
 
@@ -376,7 +376,6 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             case 'btn_deny': {
-                await interaction.deferReply({ ephemeral: true });
                 const targetId = selectedUsers.get(channel.id);
                 if (!targetId || targetId === 'none') return interaction.editReply({ content: '❌ يرجى اختيار العضو من القائمة المنسدلة أولاً!' });
 
@@ -398,7 +397,6 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             case 'btn_kick': {
-                await interaction.deferReply({ ephemeral: true });
                 const targetId = selectedUsers.get(channel.id);
                 if (!targetId || targetId === 'none') return interaction.editReply({ content: '❌ يرجى اختيار العضو من القائمة المنسدلة أولاً!' });
 
@@ -423,7 +421,6 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             case 'btn_mute': {
-                await interaction.deferReply({ ephemeral: true });
                 const targetId = selectedUsers.get(channel.id);
                 if (!targetId || targetId === 'none') return interaction.editReply({ content: '❌ يرجى اختيار العضو من القائمة المنسدلة أولاً!' });
 
@@ -448,7 +445,6 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             case 'btn_unmute': {
-                await interaction.deferReply({ ephemeral: true });
                 const targetId = selectedUsers.get(channel.id);
                 if (!targetId || targetId === 'none') return interaction.editReply({ content: '❌ يرجى اختيار العضو من القائمة المنسدلة أولاً!' });
 
@@ -473,7 +469,6 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             case 'btn_delete':
-                await interaction.deferReply({ ephemeral: true });
                 tempChannels.delete(channel.id);
                 selectedUsers.delete(channel.id);
                 
@@ -498,7 +493,7 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     if (interaction.isModalSubmit()) {
-        await interaction.deferReply({ ephemeral: true });
+        await interaction.deferReply({ ephemeral: true }).catch(() => {});
         const userTag = interaction.user.tag;
         const channelName = channel.name;
 
