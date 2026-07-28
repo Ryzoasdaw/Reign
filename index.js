@@ -29,7 +29,7 @@ const client = new Client({
     ]
 });
 
-// Map لتخزين الرومات الصوتية المؤقتة فقط ومعرفة مالكها (voiceChannelId -> ownerId)
+// Map لتخزين الرومات الصوتية المؤقتة فقط (voiceChannelId -> ownerId)
 const tempVoiceChannels = new Map(); 
 const userVoiceActivity = new Map(); 
 const leaderboardMessages = new Map(); 
@@ -37,7 +37,7 @@ const leaderboardMessages = new Map();
 client.once('ready', async () => {
     console.log(`🤖 البوت متصل باسم: ${client.user.tag}`);
 
-    // تتبع وقت الأعضاء الموجودين بالصوت
+    // تتبع الوقت للأعضاء المتواجدين في الصوت
     for (const guild of client.guilds.cache.values()) {
         for (const channel of guild.channels.cache.values()) {
             if (channel.isVoiceBased()) {
@@ -53,17 +53,17 @@ client.once('ready', async () => {
         }
     }
 
-    // إرسال اللوحة الثابتة في قناة الكنترول الدائمة
+    // 1. تثبيت لوحة التحكم الدائمة في قناة الكنترول (#control)
     setupPermanentControlPanel();
 
-    // تحديث الليدربورد
+    // 2. إرسال/تحديث لوحة الصدارة واللفلات في قناة التوب (#top10)
     updateLeaderboard();
     setInterval(() => {
         updateLeaderboard();
     }, 60 * 60 * 1000); 
 });
 
-// 🎨 بناء لوحة التحكم الزرقاء
+// 🎨 بناء إمبد لوحة التحكم بالأزرار الزرقاء
 function buildControlPanelEmbed() {
     const embed = new EmbedBuilder()
         .setColor(0x1E1F22)
@@ -109,7 +109,7 @@ function buildControlPanelEmbed() {
     return { embeds: [embed], components: [row1, row2, row3, row4, row5, row6] };
 }
 
-// 📌 تثبيت أو تحديث رسالة التحكم في القناة الدائمة
+// 📌 إرسال أو تحديث رسالة التحكم الثابتة في قناة #control
 async function setupPermanentControlPanel() {
     const controlChannelId = process.env.CONTROL_CHANNEL_ID;
     if (!controlChannelId) return;
@@ -129,7 +129,7 @@ async function setupPermanentControlPanel() {
             await channel.send(panelData);
         }
     } catch (error) {
-        console.error('خطأ أثناء إرسال لوحة الكنترول الدائمة:', error);
+        console.error('خطأ أثناء تثبيت لوحة التحكم:', error);
     }
 }
 
@@ -302,6 +302,7 @@ async function generateLeaderboardCanvas(topUsers, guild) {
     return canvas.toBuffer('image/png');
 }
 
+// تحديث الصدارة فقط في قناة #top10
 async function updateLeaderboard() {
     const channelIds = [
         process.env.LEADERBOARD_CHANNEL_ID_1,
@@ -311,7 +312,7 @@ async function updateLeaderboard() {
     if (channelIds.length === 0) return;
 
     for (const channelId of channelIds) {
-        // حماية: عدم إرسال الصدارة إطلاقاً في روم الكنترول الدائم
+        // حماية: يمنع إرسال الصدارة إطلاقاً داخل روم #control
         if (channelId === process.env.CONTROL_CHANNEL_ID) continue;
 
         const channel = client.channels.cache.get(channelId);
@@ -356,12 +357,12 @@ async function updateLeaderboard() {
             const newMsg = await channel.send(messageContent);
             leaderboardMessages.set(channelId, newMsg.id);
         } catch (error) {
-            console.error(`Error updating leaderboard in channel ${channelId}:`, error);
+            console.error(`خطأ أثناء إرسال الصدارة:`, error);
         }
     }
 }
 
-// إنشاء/حذف الرومات الصوتية المؤقتة فقط
+// إنشاء الرومات الصوتية المؤقتة فقط عند الانضمام
 client.on('voiceStateUpdate', async (oldState, newState) => {
     const guild = newState.guild || oldState.guild;
     const member = newState.member || oldState.member;
@@ -382,7 +383,6 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         }
     }
 
-    // إنشاء روم صوتي فقط
     if (newState.channelId && newState.channelId === process.env.JOIN_CHANNEL_ID) {
         try {
             const parentCategory = process.env.CATEGORY_ID || null;
@@ -405,7 +405,6 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         }
     }
 
-    // حذف الروم عند خروج الجميع
     if (oldState.channelId && tempVoiceChannels.has(oldState.channelId)) {
         const voiceChannel = oldState.guild.channels.cache.get(oldState.channelId);
         if (voiceChannel && voiceChannel.members.size === 0) {
@@ -415,7 +414,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     }
 });
 
-// التعامل مع الأزرار والتحقق من المالك
+// استقبال التفاعلات والتحقق من المالك
 client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton() && interaction.customId === 'btn_my_points') {
         const totalMs = getUserTotalTime(interaction.user.id);
@@ -430,7 +429,6 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.reply({ content: '🔄 تم تصفير البيانات بنجاح!', ephemeral: true });
     }
 
-    // التأكد التام من أن الضغط تم من المالك لـ روم صوتي مؤقت متواجد فيه حالياً
     const userVoiceChannel = interaction.member.voice?.channel;
 
     if (interaction.isButton() || interaction.isUserSelectMenu() || interaction.isRoleSelectMenu() || interaction.isModalSubmit()) {
@@ -440,7 +438,7 @@ client.on('interactionCreate', async (interaction) => {
 
         const roomOwnerId = tempVoiceChannels.get(userVoiceChannel.id);
         if (interaction.user.id !== roomOwnerId) {
-            return interaction.reply({ content: '❌ أنت لست مالك هذا الروم الصوتي المؤقت!', ephemeral: true });
+            return interaction.reply({ content: '❌ أنت لست صاحب هذا الروم الصوتي المؤقت!', ephemeral: true });
         }
     }
 
