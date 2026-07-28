@@ -29,10 +29,9 @@ const client = new Client({
     ]
 });
 
-// حفظ الرومات الصوتيّة وتكليف القناة النصيّة لكل صاحب روم
+// حفظ بيانات الرومات الموقتة
 const tempChannels = new Map(); // voiceChannelId -> { ownerId, textChannelId }
 const userVoiceActivity = new Map(); 
-// حفظ أرقام الرسائل لكل قناة صدارة لتعديلها بدلاً من إرسال رسائل جديدة كل مرة
 const leaderboardMessages = new Map(); // channelId -> messageId
 
 client.once('ready', async () => {
@@ -54,13 +53,12 @@ client.once('ready', async () => {
     }
 
     updateLeaderboard();
-    // ⏱️ تحديث اللوحة التلقائي كل ساعة
     setInterval(() => {
         updateLeaderboard();
     }, 60 * 60 * 1000); 
 });
 
-// 🎨 تصميم لوحة التحكم المطابقة للصورة تماماً
+// 🎨 تصميم لوحة تحكم الروم الصوتي (المطابقة للوحة المطلوب ظهورها)
 function buildControlPanelEmbed() {
     const embed = new EmbedBuilder()
         .setColor(0x1E1F22)
@@ -104,7 +102,7 @@ function buildControlPanelEmbed() {
     return { embeds: [embed], components: [row1, row2, row3, row4, row5] };
 }
 
-// ✨ تنسيق الوقت
+// ✨ تنسيق الوقت للوحة الصدارة
 function formatTime(ms) {
     if (!ms || ms < 1000) return '0s';
     const seconds = Math.floor((ms / 1000) % 60);
@@ -274,9 +272,8 @@ async function generateLeaderboardCanvas(topUsers, guild) {
     return canvas.toBuffer('image/png');
 }
 
-// 🔄 دالة تحديث الصدارة في القناتين النصيتين معاً
+// 🔄 تحديث لوحة الصدارة فقط في رومات الصدارة المحددة
 async function updateLeaderboard() {
-    // جلب آيدي القناتين من المتغيرات البيئية
     const channelIds = [
         process.env.LEADERBOARD_CHANNEL_ID_1,
         process.env.LEADERBOARD_CHANNEL_ID_2
@@ -332,7 +329,7 @@ async function updateLeaderboard() {
     }
 }
 
-// 🔊 إنشاء الروم الصوتي + الروم النصي المخفي #control خصيصاً لصاحب الروم
+// 🔊 إنشاء الروم الصوتي + إرسال لوحة التحكم الزرقاء الصحيحة
 client.on('voiceStateUpdate', async (oldState, newState) => {
     const guild = newState.guild || oldState.guild;
     const member = newState.member || oldState.member;
@@ -353,7 +350,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         }
     }
 
-    // 🟢 دخول العضو للروم المخصص للانشاء
+    // 🟢 دخول روم الإنشاء
     if (newState.channelId && newState.channelId === process.env.JOIN_CHANNEL_ID) {
         try {
             const parentCategory = process.env.CATEGORY_ID || null;
@@ -369,18 +366,18 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
                 ]
             });
 
-            // 2. إنشاء روم التحكم النصي (#control) مخفي عن الجميع ومفتوح فقط لصاحب الروم
+            // 2. إنشاء روم التحكم النصي (#control)
             const tempTextChannel = await guild.channels.create({
-                name: `control`,
+                name: `control-${member.user.username}`,
                 type: ChannelType.GuildText,
                 parent: parentCategory,
                 permissionOverwrites: [
-                    { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] }, // إخفاء عن باقي الأعضاء
-                    { id: member.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] } // إظهار لصاحب الروم
+                    { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+                    { id: member.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] }
                 ]
             });
 
-            // ربط البيانات
+            // حفظ البيانات
             tempChannels.set(tempVoiceChannel.id, {
                 ownerId: member.id,
                 textChannelId: tempTextChannel.id
@@ -389,19 +386,19 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
             // نقل العضو للروم الصوتي
             await member.voice.setChannel(tempVoiceChannel).catch(() => {});
 
-            // إرسال لوحة التحكم الفخمة داخل روم التحكم النصي #control
+            // 3. إرسال لوحة التحكم الخفيفة (Lock, Unlock, Rename...)
             const panelData = buildControlPanelEmbed();
             await tempTextChannel.send({
-                content: `👋 أهلاً بك <@${member.id}>! هذه هي لوحة التحكم الخاصة برومك المؤقت.`,
+                content: `👋 أهلاً بك <@${member.id}>! يمكنك التحكم برومك من هنا:`,
                 ...panelData
             });
 
         } catch (error) {
-            console.error('خطأ أثناء إنشاء الرومات:', error);
+            console.error('خطأ أثناء إنشاء الروم:', error);
         }
     }
 
-    // 🔴 عند مغادرة الروم الصوتي (حذف الروم الصوتي + الروم النصي للتحكم)
+    // 🔴 حذف الروم الصوتي وروم التحكم عند المغادرة
     if (oldState.channelId && tempChannels.has(oldState.channelId)) {
         const voiceChannel = oldState.guild.channels.cache.get(oldState.channelId);
         if (voiceChannel && voiceChannel.members.size === 0) {
@@ -418,9 +415,8 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     }
 });
 
-// 🎮 إدارة تفاعلات أزرار لوحة التحكم والقوائم
+// 🎮 التحكم بالأزرار والقوائم
 client.on('interactionCreate', async (interaction) => {
-    // زر النقاط التفاعلي
     if (interaction.isButton() && interaction.customId === 'btn_my_points') {
         const totalMs = getUserTotalTime(interaction.user.id);
         const { level } = getLevelInfo(totalMs);
@@ -434,7 +430,6 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.reply({ content: '🔄 تم تصفير البيانات بنجاح!', ephemeral: true });
     }
 
-    // البحث عن بيانات الروم المرتبط
     let voiceChannel = interaction.member.voice?.channel;
     let channelInfo = null;
 
@@ -456,11 +451,9 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.reply({ content: '❌ أنت لست صاحب هذا الروم!', ephemeral: true });
     }
 
-    // معالجة الضغط على الأزرار
     if (interaction.isButton()) {
         const customId = interaction.customId;
 
-        // الأزرار التي تظهر نافذة إدخال نص (Modals)
         if (customId === 'btn_rename') {
             const modal = new ModalBuilder().setCustomId('modal_rename').setTitle('Rename Room');
             const input = new TextInputBuilder().setCustomId('input_name').setLabel('New Room Name').setStyle(TextInputStyle.Short).setRequired(true);
@@ -482,24 +475,18 @@ client.on('interactionCreate', async (interaction) => {
             return interaction.showModal(modal);
         }
 
-        // أزرار الاختيارات والتحديد من القائمة (Select Menus)
         if (['btn_kick', 'btn_block', 'btn_unblock', 'btn_trust', 'btn_untrust'].includes(customId)) {
-            const userSelect = new UserSelectMenuBuilder()
-                .setCustomId(`select_${customId}`)
-                .setPlaceholder('اختر العضو المحدد...');
+            const userSelect = new UserSelectMenuBuilder().setCustomId(`select_${customId}`).setPlaceholder('اختر العضو المحدد...');
             return interaction.reply({ components: [new ActionRowBuilder().addComponents(userSelect)], ephemeral: true });
         }
 
         if (['btn_allow_role', 'btn_remove_role'].includes(customId)) {
-            const roleSelect = new RoleSelectMenuBuilder()
-                .setCustomId(`select_${customId}`)
-                .setPlaceholder('اختر الرتبة...');
+            const roleSelect = new RoleSelectMenuBuilder().setCustomId(`select_${customId}`).setPlaceholder('اختر الرتبة...');
             return interaction.reply({ components: [new ActionRowBuilder().addComponents(roleSelect)], ephemeral: true });
         }
 
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
 
-        // بقية التحكم بالأزرار العادية
         switch (customId) {
             case 'btn_lock':
                 await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { Connect: false });
@@ -524,7 +511,7 @@ client.on('interactionCreate', async (interaction) => {
                 await interaction.editReply({ content: '🎵 يمكنك استدعاء بوت الموسيقى داخل الروم الآن.' });
                 break;
             case 'btn_view_roles': {
-                const overwrites = voiceChannel.permissionOverwrites.cache.filter(o => o.type === 1); // Roles
+                const overwrites = voiceChannel.permissionOverwrites.cache.filter(o => o.type === 1);
                 const rolesList = overwrites.map(o => `<@&${o.id}>`).join(', ') || 'لا توجد رتب مخصصة حالياً.';
                 await interaction.editReply({ content: `📜 **الرتب المسموح لها:**\n${rolesList}` });
                 break;
@@ -532,7 +519,6 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
-    // التعامل مع الاختيارات من المنيو (User & Role Selects)
     if (interaction.isUserSelectMenu()) {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
         const targetId = interaction.values[0];
@@ -583,7 +569,6 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
-    // التعامل مع إدخالات المودال
     if (interaction.isModalSubmit()) {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
         if (interaction.customId === 'modal_rename') {
