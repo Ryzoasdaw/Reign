@@ -9,10 +9,8 @@ const {
     TextInputBuilder,
     TextInputStyle,
     ChannelType,
-    EmbedBuilder,
     AttachmentBuilder,
-    UserSelectMenuBuilder,
-    RoleSelectMenuBuilder
+    UserSelectMenuBuilder
 } = require('discord.js');
 const { createCanvas, loadImage } = require('@napi-rs/canvas');
 require('dotenv').config();
@@ -32,6 +30,7 @@ const client = new Client({
 const tempVoiceChannels = new Map(); 
 const userVoiceActivity = new Map(); 
 const leaderboardMessages = new Map(); 
+const selectedTargets = new Map(); // لتخزين العضو المختار لكل مستخدم
 
 client.once('ready', async () => {
     console.log(`🤖 البوت متصل باسم: ${client.user.tag}`);
@@ -59,30 +58,29 @@ function buildTempRoomControlUI(memberMention) {
     const content = `أهلاً بك في رومك المؤقت، ${memberMention} استخدم الأزرار والقائمة أدناه للتحكم:`;
 
     const row1 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('btn_show').setLabel('إظهار').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('btn_hide').setLabel('إخفاء').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('btn_lock').setLabel('قفل').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('btn_unlock').setLabel('فتح').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('btn_lock').setLabel('قفل').setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder().setCustomId('btn_hide').setLabel('إخفاء').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('btn_show').setLabel('إظهار').setStyle(ButtonStyle.Secondary)
     );
 
     const row2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('btn_allow_admin').setLabel('سماح إداري').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('btn_remove_admin').setLabel('إزالة إداري').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('btn_limit').setLabel('حد').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('btn_kick').setLabel('طرد').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('btn_remove_role').setLabel('إزالة إداري').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('btn_allow_role').setLabel('سماح إداري').setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder().setCustomId('btn_rename').setLabel('الاسم').setStyle(ButtonStyle.Secondary)
     );
 
     const row3 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('btn_delete').setLabel('حذف').setStyle(ButtonStyle.Danger),
-        new ButtonBuilder().setCustomId('btn_unblock').setLabel('فك').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('btn_block').setLabel('ميوت').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('btn_rename').setLabel('الاسم').setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder().setCustomId('btn_mute').setLabel('ميوت').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('btn_unmute').setLabel('فك').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('btn_delete').setLabel('حذف').setStyle(ButtonStyle.Danger)
     );
 
     const userSelect = new ActionRowBuilder().addComponents(
         new UserSelectMenuBuilder()
-            .setCustomId('select_room_action')
-            .setPlaceholder('...اختر العضو لتطبيق الصلاحيات أو الميوت أو الطرد')
+            .setCustomId('select_target_user')
+            .setPlaceholder('اختيار العضو')
     );
 
     return { content, components: [row1, row2, row3, userSelect] };
@@ -379,7 +377,7 @@ client.on('interactionCreate', async (interaction) => {
 
     const userVoiceChannel = interaction.member.voice?.channel;
 
-    if (interaction.isButton() || interaction.isUserSelectMenu() || interaction.isRoleSelectMenu() || interaction.isModalSubmit()) {
+    if (interaction.isButton() || interaction.isUserSelectMenu() || interaction.isModalSubmit()) {
         if (!userVoiceChannel || !tempVoiceChannels.has(userVoiceChannel.id)) {
             return interaction.reply({ content: '⚠️ يجب أن تكون متواجداً داخل رومك الصوتي المؤقت لاستخدام اللوحة!', ephemeral: true });
         }
@@ -392,6 +390,17 @@ client.on('interactionCreate', async (interaction) => {
 
     const voiceChannel = userVoiceChannel;
 
+    // استقبال اختيار العضو من القائمة المنسدلة
+    if (interaction.isUserSelectMenu()) {
+        if (interaction.customId === 'select_target_user') {
+            const targetId = interaction.values[0];
+            selectedTargets.set(interaction.user.id, targetId);
+            const targetMember = await interaction.guild.members.fetch(targetId).catch(() => null);
+            const name = targetMember ? targetMember.displayName : targetId;
+            return interaction.reply({ content: `✅ تم تحديد العضو: **${name}**. يمكنك الآن الضغط على (سماح إداري، ميوت، فك...)`, ephemeral: true });
+        }
+    }
+
     if (interaction.isButton()) {
         const customId = interaction.customId;
 
@@ -403,7 +412,7 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         if (customId === 'btn_limit') {
-            const modal = new ModalBuilder().setCustomId('modal_limit').setTitle('تغيير حد الأعضاء');
+            const modal = new ModalBuilder().setCustomId('modal_limit').setTitle('تحديد عدد الأعضاء');
             const input = new TextInputBuilder().setCustomId('input_limit').setLabel('العدد (0 للمفتوح)').setStyle(TextInputStyle.Short).setRequired(true);
             modal.addComponents(new ActionRowBuilder().addComponents(input));
             return interaction.showModal(modal);
@@ -412,77 +421,72 @@ client.on('interactionCreate', async (interaction) => {
         if (customId === 'btn_delete') {
             await interaction.reply({ content: '🗑️ جاري حذف الروم...', ephemeral: true });
             tempVoiceChannels.delete(voiceChannel.id);
+            selectedTargets.delete(interaction.user.id);
             return voiceChannel.delete().catch(() => {});
         }
 
-        // أزرار الطرد والميوت والفك أصبحت تفتح قائمة لاختيار الأعضاء (UserSelectMenu)
-        if (['btn_kick', 'btn_block', 'btn_unblock'].includes(customId)) {
-            const userSelect = new UserSelectMenuBuilder().setCustomId(`select_${customId}`).setPlaceholder('...اختر العضو المحدد');
-            return interaction.reply({ components: [new ActionRowBuilder().addComponents(userSelect)], ephemeral: true });
+        // الأزرار العامة للروم
+        if (['btn_lock', 'btn_unlock', 'btn_hide', 'btn_show'].includes(customId)) {
+            await interaction.deferReply({ ephemeral: true }).catch(() => {});
+            switch (customId) {
+                case 'btn_lock':
+                    await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { Connect: false });
+                    return interaction.editReply({ content: '🔒 تم قفل الروم.' });
+                case 'btn_unlock':
+                    await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { Connect: true });
+                    return interaction.editReply({ content: '🔓 تم فتح الروم.' });
+                case 'btn_hide':
+                    await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: false });
+                    return interaction.editReply({ content: '👁️‍🗨️ تم إخفاء الروم.' });
+                case 'btn_show':
+                    await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: true });
+                    return interaction.editReply({ content: '👁️ تم إظهار الروم.' });
+            }
         }
 
-        if (['btn_allow_role', 'btn_remove_role'].includes(customId)) {
-            const roleSelect = new RoleSelectMenuBuilder().setCustomId(`select_${customId}`).setPlaceholder('اختر الرتبة...');
-            return interaction.reply({ components: [new ActionRowBuilder().addComponents(roleSelect)], ephemeral: true });
+        // الأزرار التي تتطلب تحديد عضو مسبقاً من القائمة
+        const targetId = selectedTargets.get(interaction.user.id);
+        if (!targetId) {
+            return interaction.reply({ content: '⚠️ يرجى تحديد العضو أولاً من قائمة (اختيار العضو) السفلية!', ephemeral: true });
         }
 
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
+        const targetMember = await interaction.guild.members.fetch(targetId).catch(() => null);
+        if (!targetMember) {
+            return interaction.editReply({ content: '❌ تعذر العثور على العضو المختار.' });
+        }
 
         switch (customId) {
-            case 'btn_lock':
-                await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { Connect: false });
-                await interaction.editReply({ content: '🔒 تم قفل رومك الصوتي.' });
+            case 'btn_allow_admin': // سماح إداري (يعطيه صلاحيات: ميوت، دفن/منع، طرد داخل الروم)
+                await voiceChannel.permissionOverwrites.edit(targetId, { 
+                    Connect: true, 
+                    ViewChannel: true, 
+                    MuteMembers: true, 
+                    DeafenMembers: true, 
+                    MoveMembers: true 
+                });
+                await interaction.editReply({ content: `👑 تم إعطاء "سماح إداري" (ميوت، دفن، طرد) للعضو <@${targetId}> بنجاح.` });
                 break;
-            case 'btn_unlock':
-                await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { Connect: true });
-                await interaction.editReply({ content: '🔓 تم فتح رومك الصوتي.' });
+
+            case 'btn_remove_admin': // إزالة إداري (تُشال منه الصلاحيات الإدارية)
+                await voiceChannel.permissionOverwrites.edit(targetId, { 
+                    MuteMembers: false, 
+                    DeafenMembers: false, 
+                    MoveMembers: false 
+                });
+                await interaction.editReply({ content: `➖ تم إزالة الصلاحيات الإدارية (الطرد، الدفن، الميوت) عن العضو <@${targetId}>.` });
                 break;
-            case 'btn_hide':
-                await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: false });
-                await interaction.editReply({ content: '👁️‍🗨️ تم إخفاء رومك الصوتي.' });
+
+            case 'btn_mute': // ميوت / دفن (منع الدخول أو إسكات)
+                await voiceChannel.permissionOverwrites.edit(targetId, { Connect: false });
+                if (targetMember.voice.channelId === voiceChannel.id) await targetMember.voice.disconnect();
+                await interaction.editReply({ content: `🔇 تم عمل ميوت/منع للعضو <@${targetId}>.` });
                 break;
-            case 'btn_show':
-                await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: true });
-                await interaction.editReply({ content: '👁️ تم إظهار رومك الصوتي.' });
+
+            case 'btn_unmute': // فك الميوت / الحظر
+                await voiceChannel.permissionOverwrites.delete(targetId);
+                await interaction.editReply({ content: `🔓 تم فك الميوت والحظر عن العضو <@${targetId}>.` });
                 break;
-        }
-    }
-
-    if (interaction.isUserSelectMenu()) {
-        await interaction.deferReply({ ephemeral: true }).catch(() => {});
-        const targetId = interaction.values[0];
-        const targetMember = await interaction.guild.members.fetch(targetId).catch(() => null);
-
-        if (!targetMember) return interaction.editReply({ content: '❌ تعذر العثور على العضو.' });
-
-        if (interaction.customId === 'select_room_action' || interaction.customId === 'select_btn_kick') {
-            if (targetMember.voice.channelId === voiceChannel.id) {
-                await targetMember.voice.disconnect();
-                await interaction.editReply({ content: `❌ تم طرد <@${targetId}> من الروم الصوتي.` });
-            } else {
-                await interaction.editReply({ content: '⚠️ العضو ليس متواجد في رومك حالياً.' });
-            }
-        } else if (interaction.customId === 'select_btn_block') {
-            await voiceChannel.permissionOverwrites.edit(targetId, { Connect: false, ViewChannel: false });
-            if (targetMember.voice.channelId === voiceChannel.id) await targetMember.voice.disconnect();
-            await interaction.editReply({ content: `🚫 تم ميوت/حظر <@${targetId}> من رومك المؤقت.` });
-        } else if (interaction.customId === 'select_btn_unblock') {
-            await voiceChannel.permissionOverwrites.delete(targetId);
-            await interaction.editReply({ content: `🔓 تم إلغاء الميوت/الحظر عن <@${targetId}>.` });
-        }
-    }
-
-    if (interaction.isRoleSelectMenu()) {
-        await interaction.deferReply({ ephemeral: true }).catch(() => {});
-        const roleId = interaction.values[0];
-
-        if (interaction.customId === 'select_btn_allow_role') {
-            await voiceChannel.permissionOverwrites.edit(roleId, { Connect: true, ViewChannel: true });
-            await interaction.editReply({ content: `👑 تم إعطاء السماح لرتبة <@&${roleId}>.` });
-        }
-        if (interaction.customId === 'select_btn_remove_role') {
-            await voiceChannel.permissionOverwrites.delete(roleId);
-            await interaction.editReply({ content: `➖ تم إزالة السماح عن رتبة <@&${roleId}>.` });
         }
     }
 
