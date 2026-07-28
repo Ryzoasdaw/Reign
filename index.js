@@ -24,14 +24,45 @@ const client = new Client({
     ]
 });
 
-// تخزين ملكية الرومات المؤقتة، الأعضاء المختارين، والمؤقتات
+// تخزين ملكية الرومات المؤقتة، الأعضاء المختارين، المؤقتات، وبيانات التفاعل
 const tempChannels = new Map();
 const selectedUsers = new Map();
 const roomIntervals = new Map();
+const userActivity = new Map(); // تفاعل المستخدمين (صوت + شات)
 
 client.once('ready', () => {
     console.log(`🤖 البوت متصل باسم: ${client.user.tag}`);
+
+    // جدولة التقرير الأسبوعي ليعمل يوم الجمعة الساعة 6:00 مساءً (18:00)
+    scheduleWeeklyLeaderboard();
 });
+
+// دالة لحساب وقت التقرير القادم يوم الجمعة الساعة 6:00 مساءً وتشغيله دورياً
+function scheduleWeeklyLeaderboard() {
+    const now = new Date();
+    const targetDay = 5; // الجمعة (0 الأحد، 1 الإثنين ... 5 الجمعة)
+    const targetHour = 18; // 6 مساءً
+    const targetMinute = 0;
+
+    let nextRun = new Date();
+    nextRun.setDate(now.getDate() + ((targetDay + 7 - now.getDay()) % 7));
+    nextRun.setHours(targetHour, targetMinute, 0, 0);
+
+    // إذا كان الوقت قد فوت موعد جمعة اليوم، احسب للجمعة القادمة
+    if (nextRun.getTime() <= now.getTime()) {
+        nextRun.setDate(nextRun.getDate() + 7);
+    }
+
+    const delay = nextRun.getTime() - now.getTime();
+
+    setTimeout(() => {
+        sendWeeklyLeaderboard();
+        // إعداد تكرار كل 7 أيام بعد أول تنفيذ
+        setInterval(() => {
+            sendWeeklyLeaderboard();
+        }, 7 * 24 * 60 * 60 * 1000);
+    }, delay);
+}
 
 // دالة لتحديث لوحة التحكم والقائمة المنسدلة
 async function updateControlPanel(channel, ownerId) {
@@ -74,7 +105,22 @@ async function updateControlPanel(channel, ownerId) {
     return { components: [row1, row2, row3, selectMenu] };
 }
 
-// 1. حدث دخول الصوت والإنشاء التلقائي واللوقات
+// دالة حساب وقت الصوت للمستخدم
+function trackVoiceTime(userId, isJoining) {
+    if (!userActivity.has(userId)) {
+        userActivity.set(userId, { voiceTime: 0, messagesCount: 0, joinTimestamp: null });
+    }
+    const data = userActivity.get(userId);
+    
+    if (isJoining) {
+        data.joinTimestamp = Date.now();
+    } else if (data.joinTimestamp) {
+        data.voiceTime += (Date.now() - data.joinTimestamp);
+        data.joinTimestamp = null;
+    }
+}
+
+// 1. حدث دخول الصوت والإنشاء التلقائي واللوقات وتتبع التفاعل
 client.on('voiceStateUpdate', async (oldState, newState) => {
     const guild = newState.guild || oldState.guild;
     const logChannelId = process.env.LOG_CHANNEL_ID;
@@ -82,6 +128,16 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     const member = newState.member || oldState.member;
 
     if (!member) return;
+
+    // تتبع التفاعل الصوتي للأعضاء
+    if (newState.channelId && !oldState.channelId) {
+        trackVoiceTime(member.id, true);
+    } else if (!newState.channelId && oldState.channelId) {
+        trackVoiceTime(member.id, false);
+    } else if (newState.channelId && oldState.channelId && newState.channelId !== oldState.channelId) {
+        trackVoiceTime(member.id, false);
+        trackVoiceTime(member.id, true);
+    }
 
     // أ. إنشاء الروم عند دخول روم الإنشاء
     if (newState.channelId && newState.channelId === process.env.JOIN_CHANNEL_ID) {
@@ -247,6 +303,71 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         }
     }
 });
+
+// تتبع تفاعل الشات
+client.on('messageCreate', async (message) => {
+    if (message.author.bot) return;
+
+    const userId = message.author.id;
+    if (!userActivity.has(userId)) {
+        userActivity.set(userId, { voiceTime: 0, messagesCount: 0, joinTimestamp: null });
+    }
+    
+    const data = userActivity.get(userId);
+    data.messagesCount += 1;
+});
+
+// دالة إرسال التقرير الأسبوعي
+async function sendWeeklyLeaderboard() {
+    const leaderboardChannelId = process.env.LEADERBOARD_CHANNEL_ID;
+    if (!leaderboardChannelId) return;
+
+    const channel = client.channels.cache.get(leaderboardChannelId);
+    if (!channel) return;
+
+    for (const [userId, data] of userActivity.entries()) {
+        if (data.joinTimestamp) {
+            data.voiceTime += (Date.now() - data.joinTimestamp);
+            data.joinTimestamp = Date.now();
+        }
+    }
+
+    const sortedUsers = [...userActivity.entries()].sort((a, b) => {
+        const scoreA = Math.floor(a[1].voiceTime / 60000) + (a[1].messagesCount * 2);
+        const scoreB = Math.floor(b[1].voiceTime / 60000) + (b[1].messagesCount * 2);
+        return scoreB - scoreA;
+    });
+
+    const top10 = sortedUsers.slice(0, 10);
+    let description = "🏆 **أكثر 10 أشخاص تفاعلاً هذا الأسبوع (صوت + شات):**\n\n";
+
+    if (top10.length === 0) {
+        description += "لا توجد بيانات تفاعل كافية حتى الآن.";
+    } else {
+        top10.forEach(([userId, data], index) => {
+            const voiceMinutes = Math.floor(data.voiceTime / 60000);
+            description += `**${index + 1}.** <@${userId}> ➔ 🎙️ **${voiceMinutes}** دقيقة صوت | 💬 **${data.messagesCount}** رسالة\n`;
+        });
+    }
+
+    try {
+        await channel.send({
+            embeds: [{
+                title: "📊 تقرير التفاعل الأسبوعي",
+                description: description,
+                color: 0x5865F2,
+                timestamp: new Date().toISOString()
+            }]
+        });
+
+        for (const [userId, data] of userActivity.entries()) {
+            data.voiceTime = 0;
+            data.messagesCount = 0;
+        }
+    } catch (error) {
+        console.error("Error sending weekly leaderboard:", error);
+    }
+}
 
 // 2. التحكم بالأزرار والنوافذ التفاعلية
 client.on('interactionCreate', async (interaction) => {
