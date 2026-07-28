@@ -13,7 +13,7 @@ const {
 } = require('discord.js');
 require('dotenv').config();
 
-const client = newClient({
+const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildVoiceStates,
