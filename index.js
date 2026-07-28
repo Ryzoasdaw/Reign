@@ -28,11 +28,14 @@ client.on('ready', () => {
     console.log(`🤖 البوت متصل باسم: ${client.user.tag}`);
 });
 
-// 1. حدث دخول الصوت والإنشاء التلقائي
+// 1. حدث دخول الصوت والإنشاء التلقائي واللوقات
 client.on('voiceStateUpdate', async (oldState, newState) => {
-    // إذا دخل الشخص روم الإنشاء
+    const guild = newState.guild || oldState.guild;
+    const logChannelId = process.env.LOG_CHANNEL_ID;
+    const logChannel = logChannelId ? guild.channels.cache.get(logChannelId) : null;
+
+    // أ. إذا دخل الشخص روم الإنشاء
     if (newState.channelId === process.env.JOIN_CHANNEL_ID) {
-        const guild = newState.guild;
         const member = newState.member;
 
         try {
@@ -59,7 +62,12 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
             // نقل العضو للروم الجديد
             await member.voice.setChannel(tempChannel);
 
-            // بناء الأزرار (طابق الصورة)
+            // 📜 لوق إنشاء الروم
+            if (logChannel) {
+                logChannel.send(`🟢 **تم إنشاء روم مؤقت:** <#${tempChannel.id}> بواسطة ${member}`);
+            }
+
+            // بناء الأزرار
             const row1 = new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId('btn_lock').setLabel('قفل').setStyle(ButtonStyle.Secondary),
                 new ButtonBuilder().setCustomId('btn_unlock').setLabel('فتح').setStyle(ButtonStyle.Secondary),
@@ -92,18 +100,53 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         }
     }
 
-    // 2. حذف الروم تلقائياً عند خروج الجميع
+    // ب. حذف الروم تلقائياً عند خروج الجميع
     if (oldState.channelId && tempChannels.has(oldState.channelId)) {
         const channel = oldState.guild.channels.cache.get(oldState.channelId);
         if (channel && channel.members.size === 0) {
+            const channelName = channel.name;
             tempChannels.delete(channel.id);
             await channel.delete().catch(() => {});
+
+            // 📜 لوق حذف الروم
+            if (logChannel) {
+                logChannel.send(`🔴 **تم حذف الروم المؤقت:** \`${channelName}\``);
+            }
+        }
+    }
+
+    // ج. لوق خروج أو طرد عضو من الصوت
+    if (oldState.channelId && !newState.channelId) {
+        if (logChannel) {
+            logChannel.send(`🚪 **خروج/طرد:** خرج ${oldState.member} من الروم الصوتية \`${oldState.channel ? oldState.channel.name : 'صوتية'}\``);
+        }
+    }
+
+    // د. لوق الميوت والدفن (سواء ميوت مايك أو سماعة)
+    if (oldState.channelId && newState.channelId && oldState.channelId === newState.channelId) {
+        if (logChannel) {
+            // ميوت أو فك ميوت المايك
+            if (!oldState.mute && newState.mute) {
+                logChannel.send(`🔇 **ميوت:** تم إعطاء ميوت للمستخدم ${newState.member} في <#${newState.channelId}>`);
+            } else if (oldState.mute && !newState.mute) {
+                logChannel.send(`🔊 **فك ميوت:** تم فك الميوت عن ${newState.member} في <#${newState.channelId}>`);
+            }
+
+            // إغلاق أو فتح السماعة (Deaf)
+            if (!oldState.deaf && newState.deaf) {
+                logChannel.send(`🎧 **دفن:** تم إغلاق السماعة (Deaf) لـ ${newState.member} في <#${newState.channelId}>`);
+            } else if (oldState.deaf && !newState.deaf) {
+                logChannel.send(`🎧 **فك الدفن:** تم فتح السماعة لـ ${newState.member} في <#${newState.channelId}>`);
+            }
         }
     }
 });
 
 // 3. التحكم بالأزرار والنوافذ التفاعلية
 client.on('interactionCreate', async (interaction) => {
+    const logChannelId = process.env.LOG_CHANNEL_ID;
+    const logChannel = logChannelId ? interaction.guild.channels.cache.get(logChannelId) : null;
+
     if (interaction.isButton()) {
         const channel = interaction.channel;
         const ownerId = tempChannels.get(channel.id);
@@ -117,21 +160,25 @@ client.on('interactionCreate', async (interaction) => {
             case 'btn_lock':
                 await channel.permissionOverwrites.edit(interaction.guild.id, { Connect: false });
                 await interaction.reply({ content: '🔒 تم قفل الروم.', ephemeral: true });
+                if (logChannel) logChannel.send(`🔒 **قفل الروم:** قام ${interaction.user} بقفل الروم <#${channel.id}>`);
                 break;
 
             case 'btn_unlock':
                 await channel.permissionOverwrites.edit(interaction.guild.id, { Connect: true });
                 await interaction.reply({ content: '🔓 تم فتح الروم.', ephemeral: true });
+                if (logChannel) logChannel.send(`🔓 **فتح الروم:** قام ${interaction.user} بفتح الروم <#${channel.id}>`);
                 break;
 
             case 'btn_hide':
                 await channel.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: false });
                 await interaction.reply({ content: '👻 تم إخفاء الروم.', ephemeral: true });
+                if (logChannel) logChannel.send(`👻 **إخفاء:** قام ${interaction.user} بإخفاء الروم <#${channel.id}>`);
                 break;
 
             case 'btn_show':
                 await channel.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: true });
                 await interaction.reply({ content: '👁️ تم إظهار الروم.', ephemeral: true });
+                if (logChannel) logChannel.send(`👁️ **إظهار:** قام ${interaction.user} بإظهار الروم <#${channel.id}>`);
                 break;
 
             case 'btn_name': {
@@ -193,6 +240,7 @@ client.on('interactionCreate', async (interaction) => {
             case 'btn_delete':
                 tempChannels.delete(channel.id);
                 await interaction.reply({ content: '🗑️ جاري حذف الروم...', ephemeral: true });
+                if (logChannel) logChannel.send(`🗑️ **حذف يدوي:** قام ${interaction.user} بحذف الروم \`${channel.name}\``);
                 await channel.delete().catch(() => {});
                 break;
         }
@@ -205,6 +253,7 @@ client.on('interactionCreate', async (interaction) => {
             const newName = interaction.fields.getTextInputValue('new_name');
             await channel.setName(newName);
             await interaction.reply({ content: `✅ تم تغيير اسم الروم إلى: **${newName}**`, ephemeral: true });
+            if (logChannel) logChannel.send(`✏️ **تغيير اسم:** قام ${interaction.user} بتغيير اسم الروم إلى \`${newName}\``);
         }
 
         if (interaction.customId === 'modal_limit') {
@@ -212,6 +261,7 @@ client.on('interactionCreate', async (interaction) => {
             if (isNaN(limit) || limit < 0 || limit > 99) return interaction.reply({ content: '❌ يرجى إدخال رقم صحيح.', ephemeral: true });
             await channel.setUserLimit(limit);
             await interaction.reply({ content: `✅ تم تغيير حد الأعضاء إلى: **${limit}**`, ephemeral: true });
+            if (logChannel) logChannel.send(`🔢 **تحديد أعضاء:** قام ${interaction.user} بتحديد حد الأعضاء في <#${channel.id}> إلى \`${limit}\``);
         }
 
         if (interaction.customId === 'modal_kick') {
@@ -220,6 +270,7 @@ client.on('interactionCreate', async (interaction) => {
             if (targetMember && targetMember.voice.channelId === channel.id) {
                 await targetMember.voice.disconnect();
                 await interaction.reply({ content: `🚫 تم طرد <@${userId}>.`, ephemeral: true });
+                if (logChannel) logChannel.send(`🚫 **طرد عضو:** قام ${interaction.user} بطرد <@${userId}> من <#${channel.id}>`);
             } else {
                 await interaction.reply({ content: '❌ العضو غير موجود بالروم.', ephemeral: true });
             }
@@ -229,26 +280,42 @@ client.on('interactionCreate', async (interaction) => {
             const userId = interaction.fields.getTextInputValue('target_user');
             await channel.permissionOverwrites.edit(userId, { Connect: true, ViewChannel: true });
             await interaction.reply({ content: `✅ تم السماح لـ <@${userId}>.`, ephemeral: true });
+            if (logChannel) logChannel.send(`✅ **سماح:** تم إعطاء صلاحية الدخول لـ <@${userId}> في <#${channel.id}> بواسطة ${interaction.user}`);
         }
 
         if (interaction.customId === 'modal_deny') {
             const userId = interaction.fields.getTextInputValue('target_user');
             await channel.permissionOverwrites.edit(userId, { Connect: false });
             await interaction.reply({ content: `🚫 تم منع <@${userId}>.`, ephemeral: true });
+            if (logChannel) logChannel.send(`🚫 **منع:** تم منع <@${userId}> من دخول <#${channel.id}> بواسطة ${interaction.user}`);
         }
 
         if (interaction.customId === 'modal_mute') {
             const userId = interaction.fields.getTextInputValue('target_user');
             await channel.permissionOverwrites.edit(userId, { Speak: false });
             await interaction.reply({ content: `🔇 تم إعطاء ميوت لـ <@${userId}>.`, ephemeral: true });
+            if (logChannel) logChannel.send(`🔇 **ميوت روم:** تم منع <@${userId}> من التحدث في <#${channel.id}> بواسطة ${interaction.user}`);
         }
 
         if (interaction.customId === 'modal_unmute') {
             const userId = interaction.fields.getTextInputValue('target_user');
             await channel.permissionOverwrites.edit(userId, { Speak: true });
             await interaction.reply({ content: `🔊 تم فك الميوت عن <@${userId}>.`, ephemeral: true });
+            if (logChannel) logChannel.send(`🔊 **فك ميوت روم:** تم السماح لـ <@${userId}> بالتحدث في <#${channel.id}> بواسطة ${interaction.user}`);
         }
     }
+});
+
+const express = require('express');
+const app = express();
+const port = process.env.PORT || 3000;
+
+app.get('/', (req, res) => {
+    res.send('Bot is running!');
+});
+
+app.listen(port, () => {
+    console.log(`🌐 Web server running on port ${port}`);
 });
 
 client.login(process.env.TOKEN);
