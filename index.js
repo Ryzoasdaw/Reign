@@ -116,7 +116,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         }
     }
 
-    // د. لوق الميوت والدفن الإداري على مستوى السيرفر (Server Mute / Server Deafen)
+    // د. لوق الميوت والدفن الإداري على مستوى السيرفر
     if (oldState.channelId && newState.channelId && oldState.channelId === newState.channelId) {
         if (logChannel) {
             if (!oldState.serverMute && newState.serverMute) {
@@ -214,7 +214,7 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             case 'btn_mute': {
-                const modal = new ModalBuilder().setCustomId('modal_mute').setTitle('إعطاء ميوت لعضو');
+                const modal = new ModalBuilder().setCustomId('modal_mute').setTitle('ميوت سيرفر لعضو');
                 const input = new TextInputBuilder().setCustomId('target_user').setLabel('ID العضو').setStyle(TextInputStyle.Short).setRequired(true);
                 modal.addComponents(new ActionRowBuilder().addComponents(input));
                 await interaction.showModal(modal);
@@ -222,7 +222,7 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             case 'btn_unmute': {
-                const modal = new ModalBuilder().setCustomId('modal_unmute').setTitle('فك الميوت عن عضو');
+                const modal = new ModalBuilder().setCustomId('modal_unmute').setTitle('فك ميوت سيرفر عن عضو');
                 const input = new TextInputBuilder().setCustomId('target_user').setLabel('ID العضو').setStyle(TextInputStyle.Short).setRequired(true);
                 modal.addComponents(new ActionRowBuilder().addComponents(input));
                 await interaction.showModal(modal);
@@ -284,16 +284,26 @@ client.on('interactionCreate', async (interaction) => {
 
         if (interaction.customId === 'modal_mute') {
             const userId = interaction.fields.getTextInputValue('target_user');
-            await channel.permissionOverwrites.edit(userId, { Speak: false });
-            await interaction.reply({ content: `🔇 تم إعطاء ميوت لـ <@${userId}>.`, ephemeral: true });
-            if (logChannel) logChannel.send(`🔇 **ميوت روم:** تم منع <@${userId}> من التحدث في <#${channel.id}> بواسطة ${interaction.user}`);
+            const targetMember = await interaction.guild.members.fetch(userId).catch(() => null);
+            if (targetMember && targetMember.voice.channelId === channel.id) {
+                await targetMember.voice.setMute(true);
+                await interaction.reply({ content: `🔇 تم إعطاء Server Mute لـ <@${userId}>.`, ephemeral: true });
+                if (logChannel) logChannel.send(`🔇 **Server Mute:** قام ${interaction.user} بإعطاء ميوت سيرفر لـ <@${userId}> في <#${channel.id}>`);
+            } else {
+                await interaction.reply({ content: '❌ العضو غير موجود بالروم.', ephemeral: true });
+            }
         }
 
         if (interaction.customId === 'modal_unmute') {
             const userId = interaction.fields.getTextInputValue('target_user');
-            await channel.permissionOverwrites.edit(userId, { Speak: true });
-            await interaction.reply({ content: `🔊 تم فك الميوت عن <@${userId}>.`, ephemeral: true });
-            if (logChannel) logChannel.send(`🔊 **فك ميوت روم:** تم السماح لـ <@${userId}> بالتحدث في <#${channel.id}> بواسطة ${interaction.user}`);
+            const targetMember = await interaction.guild.members.fetch(userId).catch(() => null);
+            if (targetMember && targetMember.voice.channelId === channel.id) {
+                await targetMember.voice.setMute(false);
+                await interaction.reply({ content: `🔊 تم فك Server Mute عن <@${userId}>.`, ephemeral: true });
+                if (logChannel) logChannel.send(`🔊 **فك Server Mute:** قام ${interaction.user} بفك ميوت السيرفر عن <@${userId}> في <#${channel.id}>`);
+            } else {
+                await interaction.reply({ content: '❌ العضو غير موجود بالروم.', ephemeral: true });
+            }
         }
     }
 });
