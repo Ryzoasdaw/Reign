@@ -361,7 +361,6 @@ client.on('interactionCreate', async (interaction) => {
                 const targetMember = await interaction.guild.members.fetch(targetId).catch(() => null);
                 const targetTag = targetMember ? targetMember.user.tag : targetId;
 
-                // إعطاء صلاحية دخول الروم + صلاحية الميوت، التعطيل الصوتي، وطرد الأعضاء (MoveMembers)
                 await channel.permissionOverwrites.edit(targetId, { 
                     Connect: true, 
                     ViewChannel: true,
@@ -389,7 +388,6 @@ client.on('interactionCreate', async (interaction) => {
                 const targetMember = await interaction.guild.members.fetch(targetId).catch(() => null);
                 const targetTag = targetMember ? targetMember.user.tag : targetId;
 
-                // إزالة صلاحيات الميوت، الدفن، والطرد (إلغاء الصلاحيات الإدارية الثلاث مع إبقاء أو إزالة الدخول حسب الرغبة، هنا تم إزالة صلاحيات الإدارة)
                 await channel.permissionOverwrites.edit(targetId, { 
                     MuteMembers: false,
                     DeafenMembers: false,
