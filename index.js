@@ -29,7 +29,6 @@ const client = new Client({
     ]
 });
 
-// Map لتخزين الرومات الصوتية المؤقتة فقط (voiceChannelId -> ownerId)
 const tempVoiceChannels = new Map(); 
 const userVoiceActivity = new Map(); 
 const leaderboardMessages = new Map(); 
@@ -37,7 +36,6 @@ const leaderboardMessages = new Map();
 client.once('ready', async () => {
     console.log(`🤖 البوت متصل باسم: ${client.user.tag}`);
 
-    // تتبع الوقت للأعضاء المتواجدين في الصوت
     for (const guild of client.guilds.cache.values()) {
         for (const channel of guild.channels.cache.values()) {
             if (channel.isVoiceBased()) {
@@ -53,63 +51,47 @@ client.once('ready', async () => {
         }
     }
 
-    // 1. تثبيت لوحة التحكم الدائمة في قناة الكنترول (#control)
     setupPermanentControlPanel();
-
-    // 2. إرسال/تحديث لوحة الصدارة واللفلات في قناة التوب (#top10)
     updateLeaderboard();
-    setInterval(() => {
-        updateLeaderboard();
-    }, 60 * 60 * 1000); 
+    setInterval(() => updateLeaderboard(), 60 * 60 * 1000); 
 });
 
-// 🎨 بناء إمبد لوحة التحكم بالأزرار الزرقاء
-function buildControlPanelEmbed() {
-    const embed = new EmbedBuilder()
-        .setColor(0x1E1F22)
-        .setTitle('Temp Voice Control Panel')
-        .setDescription('Use these controls while you are inside your temporary voice room.\n\n**Room Controls**');
+// 🎨 بناء الأزرار والقوائم للروم المؤقت وقناة الكنترول
+function buildTempRoomControlUI(memberMention) {
+    const content = memberMention 
+        ? `أهلاً بك في رومك المؤقت، ${memberMention} استخدم الأزرار والقائمة أدناه للتحكم:`
+        : 'Use these controls to manage your temporary voice room:';
 
     const row1 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('btn_lock').setLabel('Lock').setEmoji('🔒').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('btn_unlock').setLabel('Open').setEmoji('🔓').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('btn_hide').setLabel('Hide').setEmoji('👁️‍🗨️').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('btn_show').setLabel('Show').setEmoji('👁️').setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder().setCustomId('btn_show').setLabel('إظهار').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('btn_hide').setLabel('إخفاء').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('btn_unlock').setLabel('فتح').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('btn_lock').setLabel('قفل').setStyle(ButtonStyle.Secondary)
     );
 
     const row2 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('btn_rename').setLabel('Rename Room').setEmoji('✏️').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('btn_limit').setLabel('Change Limit').setEmoji('👥').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('btn_region').setLabel('Change Region').setEmoji('🔄').setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder().setCustomId('btn_limit').setLabel('حد').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('btn_kick').setLabel('طرد').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('btn_remove_role').setLabel('إزالة إداري').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('btn_allow_role').setLabel('سماح إداري').setStyle(ButtonStyle.Secondary)
     );
 
     const row3 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('btn_status').setLabel('Voice Status').setEmoji('💬').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('btn_music').setLabel('Music Bot').setEmoji('🎵').setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder().setCustomId('btn_delete').setLabel('حذف').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId('btn_unblock').setLabel('فك').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('btn_block').setLabel('ميوت').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('btn_rename').setLabel('الاسم').setStyle(ButtonStyle.Secondary)
     );
 
-    const row4 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('btn_kick').setLabel('Kick Member').setEmoji('❌').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('btn_block').setLabel('Block Member').setEmoji('🚫').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('btn_unblock').setLabel('Unblock Member').setEmoji('🔓').setStyle(ButtonStyle.Secondary)
+    const userSelect = new ActionRowBuilder().addComponents(
+        new UserSelectMenuBuilder()
+            .setCustomId('select_room_action')
+            .setPlaceholder('...اختر العضو لتطبيق الصلاحيات أو الميوت أو الطرد')
     );
 
-    const row5 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('btn_invite').setLabel('Invite Member').setEmoji('✉️').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('btn_trust').setLabel('Trust Member').setEmoji('🟢').setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId('btn_untrust').setLabel('Untrust Member').setEmoji('🔴').setStyle(ButtonStyle.Danger),
-        new ButtonBuilder().setCustomId('btn_allow_role').setLabel('Allow Role').setEmoji('👑').setStyle(ButtonStyle.Secondary)
-    );
-
-    const row6 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('btn_remove_role').setLabel('Remove Role').setEmoji('➖').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('btn_view_roles').setLabel('View Allowed Roles').setEmoji('📜').setStyle(ButtonStyle.Secondary)
-    );
-
-    return { embeds: [embed], components: [row1, row2, row3, row4, row5, row6] };
+    return { content, components: [row1, row2, row3, userSelect] };
 }
 
-// 📌 إرسال أو تحديث رسالة التحكم الثابتة في قناة #control
 async function setupPermanentControlPanel() {
     const controlChannelId = process.env.CONTROL_CHANNEL_ID;
     if (!controlChannelId) return;
@@ -118,10 +100,9 @@ async function setupPermanentControlPanel() {
     if (!channel) return;
 
     try {
-        const panelData = buildControlPanelEmbed();
+        const panelData = buildTempRoomControlUI();
         const messages = await channel.messages.fetch({ limit: 10 }).catch(() => null);
-        
-        let existingMsg = messages ? messages.find(m => m.author.id === client.user.id && m.embeds.length > 0 && m.embeds[0].title === 'Temp Voice Control Panel') : null;
+        let existingMsg = messages ? messages.find(m => m.author.id === client.user.id) : null;
 
         if (existingMsg) {
             await existingMsg.edit(panelData);
@@ -129,7 +110,7 @@ async function setupPermanentControlPanel() {
             await channel.send(panelData);
         }
     } catch (error) {
-        console.error('خطأ أثناء تثبيت لوحة التحكم:', error);
+        console.error('خطأ أثناء إرسال اللوحة الثابتة:', error);
     }
 }
 
@@ -165,12 +146,8 @@ function getUserTotalTime(userId) {
 function getLevelInfo(totalMs) {
     const totalMinutes = Math.floor(totalMs / (1000 * 60));
     const level = Math.floor(totalMinutes / 5);
-
     const tier = Math.floor(level / 10);
-    const colorPalette = [
-        '#00f2fe', '#00ff87', '#ff007f', '#ffaa00', '#9d00ff', '#ff3b30'
-    ];
-
+    const colorPalette = ['#00f2fe', '#00ff87', '#ff007f', '#ffaa00', '#9d00ff', '#ff3b30'];
     const activeColor = colorPalette[Math.min(tier, colorPalette.length - 1)];
     return { level, activeColor };
 }
@@ -302,7 +279,6 @@ async function generateLeaderboardCanvas(topUsers, guild) {
     return canvas.toBuffer('image/png');
 }
 
-// تحديث الصدارة فقط في قناة #top10
 async function updateLeaderboard() {
     const channelIds = [
         process.env.LEADERBOARD_CHANNEL_ID_1,
@@ -312,7 +288,6 @@ async function updateLeaderboard() {
     if (channelIds.length === 0) return;
 
     for (const channelId of channelIds) {
-        // حماية: يمنع إرسال الصدارة إطلاقاً داخل روم #control
         if (channelId === process.env.CONTROL_CHANNEL_ID) continue;
 
         const channel = client.channels.cache.get(channelId);
@@ -357,12 +332,12 @@ async function updateLeaderboard() {
             const newMsg = await channel.send(messageContent);
             leaderboardMessages.set(channelId, newMsg.id);
         } catch (error) {
-            console.error(`خطأ أثناء إرسال الصدارة:`, error);
+            console.error(`Error updating leaderboard:`, error);
         }
     }
 }
 
-// إنشاء الرومات الصوتية المؤقتة فقط عند الانضمام
+// إنشاء الروم الصوتي المؤقت + إرسال الرسالة الترحيبية داخله فوراً
 client.on('voiceStateUpdate', async (oldState, newState) => {
     const guild = newState.guild || oldState.guild;
     const member = newState.member || oldState.member;
@@ -400,6 +375,10 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
             tempVoiceChannels.set(tempVoiceChannel.id, member.id);
             await member.voice.setChannel(tempVoiceChannel).catch(() => {});
 
+            // إرسال رسالة التحكم تلقائياً داخل الشات الصوتي للروم المفتوح حديثاً
+            const welcomeData = buildTempRoomControlUI(`<@${member.id}>`);
+            await tempVoiceChannel.send(welcomeData).catch(() => {});
+
         } catch (error) {
             console.error('خطأ أثناء إنشاء الروم الصوتي:', error);
         }
@@ -414,7 +393,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     }
 });
 
-// استقبال التفاعلات والتحقق من المالك
+// التعامل مع الأزرار والقائمة
 client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton() && interaction.customId === 'btn_my_points') {
         const totalMs = getUserTotalTime(interaction.user.id);
@@ -433,7 +412,7 @@ client.on('interactionCreate', async (interaction) => {
 
     if (interaction.isButton() || interaction.isUserSelectMenu() || interaction.isRoleSelectMenu() || interaction.isModalSubmit()) {
         if (!userVoiceChannel || !tempVoiceChannels.has(userVoiceChannel.id)) {
-            return interaction.reply({ content: '⚠️ يجب أن تكون متواجداً داخل رومك الصوتي المؤقت ليمكنك استخدام لوحة التحكم!', ephemeral: true });
+            return interaction.reply({ content: '⚠️ يجب أن تكون متواجداً داخل رومك الصوتي المؤقت لاستخدام اللوحة!', ephemeral: true });
         }
 
         const roomOwnerId = tempVoiceChannels.get(userVoiceChannel.id);
@@ -448,27 +427,26 @@ client.on('interactionCreate', async (interaction) => {
         const customId = interaction.customId;
 
         if (customId === 'btn_rename') {
-            const modal = new ModalBuilder().setCustomId('modal_rename').setTitle('Rename Room');
-            const input = new TextInputBuilder().setCustomId('input_name').setLabel('New Room Name').setStyle(TextInputStyle.Short).setRequired(true);
+            const modal = new ModalBuilder().setCustomId('modal_rename').setTitle('تغيير اسم الروم');
+            const input = new TextInputBuilder().setCustomId('input_name').setLabel('الاسم الجديد').setStyle(TextInputStyle.Short).setRequired(true);
             modal.addComponents(new ActionRowBuilder().addComponents(input));
             return interaction.showModal(modal);
         }
 
         if (customId === 'btn_limit') {
-            const modal = new ModalBuilder().setCustomId('modal_limit').setTitle('Change Room Limit');
-            const input = new TextInputBuilder().setCustomId('input_limit').setLabel('Limit (0 for unlimited)').setStyle(TextInputStyle.Short).setRequired(true);
+            const modal = new ModalBuilder().setCustomId('modal_limit').setTitle('تغيير حد الأعضاء');
+            const input = new TextInputBuilder().setCustomId('input_limit').setLabel('العدد (0 للمفتوح)').setStyle(TextInputStyle.Short).setRequired(true);
             modal.addComponents(new ActionRowBuilder().addComponents(input));
             return interaction.showModal(modal);
         }
 
-        if (customId === 'btn_status') {
-            const modal = new ModalBuilder().setCustomId('modal_status').setTitle('Voice Status');
-            const input = new TextInputBuilder().setCustomId('input_status').setLabel('Set Voice Status').setStyle(TextInputStyle.Short).setRequired(true);
-            modal.addComponents(new ActionRowBuilder().addComponents(input));
-            return interaction.showModal(modal);
+        if (customId === 'btn_delete') {
+            await interaction.reply({ content: '🗑️ جاري حذف الروم...', ephemeral: true });
+            tempVoiceChannels.delete(voiceChannel.id);
+            return voiceChannel.delete().catch(() => {});
         }
 
-        if (['btn_kick', 'btn_block', 'btn_unblock', 'btn_trust', 'btn_untrust'].includes(customId)) {
+        if (['btn_kick', 'btn_block', 'btn_unblock'].includes(customId)) {
             const userSelect = new UserSelectMenuBuilder().setCustomId(`select_${customId}`).setPlaceholder('اختر العضو المحدد...');
             return interaction.reply({ components: [new ActionRowBuilder().addComponents(userSelect)], ephemeral: true });
         }
@@ -497,18 +475,6 @@ client.on('interactionCreate', async (interaction) => {
                 await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: true });
                 await interaction.editReply({ content: '👁️ تم إظهار رومك الصوتي.' });
                 break;
-            case 'btn_region':
-                await interaction.editReply({ content: '🌐 يمكنك تغيير المنطقة من إعدادات الروم الصوتي مباشرة.' });
-                break;
-            case 'btn_music':
-                await interaction.editReply({ content: '🎵 يمكنك استدعاء بوت الموسيقى داخل الروم الآن.' });
-                break;
-            case 'btn_view_roles': {
-                const overwrites = voiceChannel.permissionOverwrites.cache.filter(o => o.type === 1);
-                const rolesList = overwrites.map(o => `<@&${o.id}>`).join(', ') || 'لا توجد رتب مخصصة حالياً.';
-                await interaction.editReply({ content: `📜 **الرتب المسموح لها:**\n${rolesList}` });
-                break;
-            }
         }
     }
 
@@ -519,32 +485,20 @@ client.on('interactionCreate', async (interaction) => {
 
         if (!targetMember) return interaction.editReply({ content: '❌ تعذر العثور على العضو.' });
 
-        switch (interaction.customId) {
-            case 'select_btn_kick':
-                if (targetMember.voice.channelId === voiceChannel.id) {
-                    await targetMember.voice.disconnect();
-                    await interaction.editReply({ content: `❌ تم طرد <@${targetId}> من الروم الصوتي.` });
-                } else {
-                    await interaction.editReply({ content: '⚠️ العضو ليس متواجد في رومك حالياً.' });
-                }
-                break;
-            case 'select_btn_block':
-                await voiceChannel.permissionOverwrites.edit(targetId, { Connect: false, ViewChannel: false });
-                if (targetMember.voice.channelId === voiceChannel.id) await targetMember.voice.disconnect();
-                await interaction.editReply({ content: `🚫 تم حظر <@${targetId}> من الروم.` });
-                break;
-            case 'select_btn_unblock':
-                await voiceChannel.permissionOverwrites.delete(targetId);
-                await interaction.editReply({ content: `🔓 تم إلغاء حظر <@${targetId}>.` });
-                break;
-            case 'select_btn_trust':
-                await voiceChannel.permissionOverwrites.edit(targetId, { Connect: true, Speak: true, ViewChannel: true });
-                await interaction.editReply({ content: `🟢 تم إعطاء الثقة لـ <@${targetId}>.` });
-                break;
-            case 'select_btn_untrust':
-                await voiceChannel.permissionOverwrites.delete(targetId);
-                await interaction.editReply({ content: `🔴 تم إزالة الثقة عن <@${targetId}>.` });
-                break;
+        if (interaction.customId === 'select_room_action' || interaction.customId === 'select_btn_kick') {
+            if (targetMember.voice.channelId === voiceChannel.id) {
+                await targetMember.voice.disconnect();
+                await interaction.editReply({ content: `❌ تم طرد <@${targetId}> من الروم الصوتي.` });
+            } else {
+                await interaction.editReply({ content: '⚠️ العضو ليس متواجد في رومك حالياً.' });
+            }
+        } else if (interaction.customId === 'select_btn_block') {
+            await voiceChannel.permissionOverwrites.edit(targetId, { Connect: false, ViewChannel: false });
+            if (targetMember.voice.channelId === voiceChannel.id) await targetMember.voice.disconnect();
+            await interaction.editReply({ content: `🚫 تم حظر/ميوت <@${targetId}>.` });
+        } else if (interaction.customId === 'select_btn_unblock') {
+            await voiceChannel.permissionOverwrites.delete(targetId);
+            await interaction.editReply({ content: `🔓 تم إلغاء الحظر عن <@${targetId}>.` });
         }
     }
 
@@ -554,11 +508,11 @@ client.on('interactionCreate', async (interaction) => {
 
         if (interaction.customId === 'select_btn_allow_role') {
             await voiceChannel.permissionOverwrites.edit(roleId, { Connect: true, ViewChannel: true });
-            await interaction.editReply({ content: `👑 تم السماح لرتبة <@&${roleId}> بالدخول.` });
+            await interaction.editReply({ content: `👑 تم إعطاء السماح لرتبة <@&${roleId}>.` });
         }
         if (interaction.customId === 'select_btn_remove_role') {
             await voiceChannel.permissionOverwrites.delete(roleId);
-            await interaction.editReply({ content: `➖ تم إزالة الصلاحية عن رتبة <@&${roleId}>.` });
+            await interaction.editReply({ content: `➖ تم إزالة السماح عن رتبة <@&${roleId}>.` });
         }
     }
 
@@ -574,10 +528,6 @@ client.on('interactionCreate', async (interaction) => {
             if (isNaN(limit) || limit < 0 || limit > 99) return interaction.editReply({ content: '❌ يرجى إدخال رقم صحيح بين 0 و 99.' });
             await voiceChannel.setUserLimit(limit).catch(() => {});
             await interaction.editReply({ content: `👥 تم تغيير حد الأعضاء إلى: **${limit}**` });
-        }
-        if (interaction.customId === 'modal_status') {
-            const status = interaction.fields.getTextInputValue('input_status');
-            await interaction.editReply({ content: `💬 تم تعيين الحالة إلى: **${status}**` });
         }
     }
 });
