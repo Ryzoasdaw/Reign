@@ -59,7 +59,7 @@ client.once('ready', async () => {
 // 🎨 بناء لوحة التحكم الهيبة (Temp Voice Control Panel)
 async function buildControlPanelEmbed() {
     const embed = new EmbedBuilder()
-        .setColor(0x2B2D31) // لون داكن فخم مع أزرار نيون
+        .setColor(0x2B2D31)
         .setTitle('👑 TEMPORARY VOICE CONTROL PANEL')
         .setDescription(
             '⚡ *لوحة تحكم الروم الصوتي المؤقتة - التحكم الكامل والاحترافي*\n\n' +
@@ -129,31 +129,30 @@ function getUserTotalTime(userId) {
     return data.voiceTime + currentSession;
 }
 
-// 👑 دالة حساب اللفل واللون بناءً على النقاط وتغير اللون كل 10 لفل
+// 👑 دالة حساب اللفل المباشر (زيادة حبة واحدة كل 5 دقائق + تغير اللون كل 10 لفل)
 function getLevelInfo(totalMs) {
     const totalMinutes = Math.floor(totalMs / (1000 * 60));
     
-    // كل 5 دقائق = +1 لفل / النقاط من 1 إلى 10000
+    // لفل يزداد حبة واحدة (+1) كل 5 دقائق صوتية
     const level = Math.floor(totalMinutes / 5);
-    const score = Math.min(totalMinutes * 2, 10000); // النقاط تصل حتى 10000
 
     // تغيير ألوان الهيبة كل 10 لفل
     const tier = Math.floor(level / 10);
     const colorPalette = [
         '#00f2fe', // Level 0 - 9: أزرق سماوي نيون
-        '#00ff87', // Level 10 - 19: أخضر نيون هيبة
-        '#ff007f', // Level 20 - 29: وردي أرجواني ملكي
-        '#ffaa00', // Level 30 - 39: ذهبي متوهج
-        '#9d00ff', // Level 40 - 49: بنفسجي إمبراطوري
-        '#ff3b30'  // Level 50+: أحمر بركاني ناري
+        '#00ff87', // Level 10 - 19: أخضر نيون
+        '#ff007f', // Level 20 - 29: وردي أرجواني
+        '#ffaa00', // Level 30 - 39: ذهبي
+        '#9d00ff', // Level 40 - 49: بنفسجي
+        '#ff3b30'  // Level 50+: أحمر ناري
     ];
 
     const activeColor = colorPalette[Math.min(tier, colorPalette.length - 1)];
 
-    return { level, score, activeColor };
+    return { level, activeColor };
 }
 
-// 🎨 رسم لوحة الصدارة الفخمة بالهيبة والألوان واللفلات
+// 🎨 رسم لوحة الصدارة الفخمة بالهيبة والألوان بدون EXP
 async function generateLeaderboardCanvas(topUsers, guild) {
     const width = 1000;
     const height = 550;
@@ -170,9 +169,9 @@ async function generateLeaderboardCanvas(topUsers, guild) {
 
     ctx.fillStyle = '#6b7280';
     ctx.font = '13px sans-serif';
-    ctx.fillText('LIVE VOICE RANKINGS & EXP SYSTEM • UPDATED EVERY MINUTE', 35, 68);
+    ctx.fillText('LIVE VOICE RANKINGS • UPDATED EVERY MINUTE', 35, 68);
 
-    // بطاقة المركز الأول الهيبة (#1 Top Card)
+    // بطاقة المركز الأول (#1 Top Card)
     ctx.fillStyle = '#0f1322';
     ctx.beginPath();
     ctx.roundRect(30, 95, 290, 420, 18);
@@ -180,7 +179,7 @@ async function generateLeaderboardCanvas(topUsers, guild) {
 
     const top1 = topUsers[0];
     if (top1) {
-        const { level, score, activeColor } = getLevelInfo(top1.time);
+        const { level, activeColor } = getLevelInfo(top1.time);
 
         ctx.fillStyle = '#e5a93b';
         ctx.font = 'bold 22px sans-serif';
@@ -206,28 +205,18 @@ async function generateLeaderboardCanvas(topUsers, guild) {
 
         // عرض اللفل والوقت
         ctx.fillStyle = activeColor;
-        ctx.font = 'bold 15px sans-serif';
-        ctx.fillText(`LVL ${level}`, 50, 300);
+        ctx.font = 'bold 18px sans-serif';
+        ctx.fillText(`LVL ${level}`, 50, 310);
 
         ctx.fillStyle = '#ffffff';
         ctx.font = 'bold 24px sans-serif';
-        ctx.fillText(formatTime(top1.time), 130, 300);
+        ctx.fillText(formatTime(top1.time), 130, 310);
 
-        // شريط تقدم الفل والخط (من 1 إلى 10000)
-        ctx.fillStyle = '#1c233a';
-        ctx.beginPath();
-        ctx.roundRect(50, 330, 250, 12, 6);
-        ctx.fill();
-
-        const progressRatio = Math.min(score / 10000, 1);
+        // خط تجميلي فخم يتغير لونه حسب المستوى
         ctx.fillStyle = activeColor;
         ctx.beginPath();
-        ctx.roundRect(50, 330, Math.max(250 * progressRatio, 10), 12, 6);
+        ctx.roundRect(50, 335, 250, 6, 3);
         ctx.fill();
-
-        ctx.fillStyle = '#8b92b0';
-        ctx.font = '12px sans-serif';
-        ctx.fillText(`EXP: ${score} / 10,000`, 50, 360);
     }
 
     // باقي المراكز (#2 - #10)
@@ -252,7 +241,7 @@ async function generateLeaderboardCanvas(topUsers, guild) {
         ctx.fillText(`#${i + 1}`, colX + 12, rowY + 43);
 
         if (user) {
-            const { level, score, activeColor } = getLevelInfo(user.time);
+            const { level, activeColor } = getLevelInfo(user.time);
 
             try {
                 const avatarUrl = user.member ? user.member.user.displayAvatarURL({ extension: 'png', size: 64 }) : '';
@@ -269,28 +258,22 @@ async function generateLeaderboardCanvas(topUsers, guild) {
             } catch (e) {}
 
             ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 12px sans-serif';
+            ctx.font = 'bold 13px sans-serif';
             const name = user.member ? user.member.displayName : 'Unknown';
             ctx.fillText(name.substring(0, 9), colX + 82, rowY + 30);
 
             ctx.fillStyle = activeColor;
-            ctx.font = 'bold 11px sans-serif';
+            ctx.font = 'bold 12px sans-serif';
             ctx.fillText(`LVL ${level}`, colX + 150, rowY + 30);
 
             ctx.fillStyle = '#ffffff';
             ctx.font = 'bold 12px sans-serif';
             ctx.fillText(formatTime(user.time), colX + cardWidth - 75, rowY + 30);
 
-            // شريط الخط التقدمي
-            ctx.fillStyle = '#1c233a';
-            ctx.beginPath();
-            ctx.roundRect(colX + 82, rowY + 42, 195, 6, 3);
-            ctx.fill();
-
-            const miniProgress = Math.min(score / 10000, 1);
+            // خط سفلي أنيق لكل بطاقة
             ctx.fillStyle = activeColor;
             ctx.beginPath();
-            ctx.roundRect(colX + 82, rowY + 42, Math.max(195 * miniProgress, 6), 6, 3);
+            ctx.roundRect(colX + 82, rowY + 45, 195, 4, 2);
             ctx.fill();
 
         } else {
@@ -448,11 +431,11 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
 client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton() && interaction.customId === 'btn_my_points') {
         const totalMs = getUserTotalTime(interaction.user.id);
-        const { level, score } = getLevelInfo(totalMs);
+        const { level } = getLevelInfo(totalMs);
         const formatted = formatTime(totalMs);
 
         return interaction.reply({ 
-            content: `⚡ **المستوى الحالي:** \`LVL ${level}\`\n📊 **شريط الخبرة:** \`${score} / 10000\`\n🎙️ **إجمالي الوقت:** \`${formatted}\``, 
+            content: `⚡ **المستوى الحالي:** \`LVL ${level}\`\n🎙️ **إجمالي الوقت:** \`${formatted}\``, 
             ephemeral: true 
         });
     }
