@@ -102,19 +102,20 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     const logChannel = logChannelId ? guild.channels.cache.get(logChannelId) : null;
     const member = newState.member || oldState.member;
 
+    if (!member) return;
+
     // تتبع التفاعل الصوتي للأعضاء
     if (newState.channelId && !oldState.channelId) {
         trackVoiceTime(member.id, true);
     } else if (!newState.channelId && oldState.channelId) {
         trackVoiceTime(member.id, false);
     } else if (newState.channelId && oldState.channelId && newState.channelId !== oldState.channelId) {
-        // انتقل من روم لآخر
         trackVoiceTime(member.id, false);
         trackVoiceTime(member.id, true);
     }
 
     // أ. إنشاء الروم عند دخول روم الإنشاء
-    if (newState.channelId === process.env.JOIN_CHANNEL_ID) {
+    if (newState.channelId && newState.channelId === process.env.JOIN_CHANNEL_ID) {
         try {
             const tempChannel = await guild.channels.create({
                 name: `🔊 | ${member.user.username}`,
@@ -133,9 +134,9 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
             });
 
             tempChannels.set(tempChannel.id, member.id);
-            await member.voice.setChannel(tempChannel);
+            await member.voice.setChannel(tempChannel).catch(() => {});
 
-            // 📜 لوق إنشاء الروم (Embed بدون منشن)
+            // 📜 لوق إنشاء الروم
             if (logChannel) {
                 const embed = new EmbedBuilder()
                     .setColor(0x00FF00)
@@ -143,7 +144,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
                     .setTitle('Create Temporary Channel')
                     .setDescription(`**Channel:** \`${tempChannel.name}\`\n**By:** \`${member.user.tag}\`\n**In:** <#${tempChannel.id}>`)
                     .setTimestamp();
-                logChannel.send({ embeds: [embed] });
+                logChannel.send({ embeds: [embed] }).catch(() => {});
             }
 
             const panel = await updateControlPanel(tempChannel, member.id);
@@ -154,7 +155,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
 
             tempChannel.controlMessageId = controlMsg.id;
 
-            // تفعيل مؤقت كل 15 دقيقة لإرسال رسالة تذكير لصاحب الروم بالمنشن
+            // تفعيل مؤقت كل 15 دقيقة
             const interval = setInterval(async () => {
                 try {
                     const currentChannel = guild.channels.cache.get(tempChannel.id);
@@ -167,7 +168,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
                 } catch (e) {
                     clearInterval(interval);
                 }
-            }, 15 * 60 * 1000); // 15 دقيقة
+            }, 15 * 60 * 1000);
 
             roomIntervals.set(tempChannel.id, interval);
 
@@ -176,7 +177,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         }
     }
 
-    // ب. حذف الروم تلقائياً عند خروج الجميع وتحديث القائمة
+    // ب. حذف الروم تلقائياً عند خروج الجميع
     if (oldState.channelId && tempChannels.has(oldState.channelId)) {
         const channel = oldState.guild.channels.cache.get(oldState.channelId);
         if (channel) {
@@ -199,7 +200,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
                         .setTitle('Delete Temporary Channel')
                         .setDescription(`**Channel:** \`${channelName}\``)
                         .setTimestamp();
-                    logChannel.send({ embeds: [embed] });
+                    logChannel.send({ embeds: [embed] }).catch(() => {});
                 }
             } else if (channel.controlMessageId) {
                 try {
@@ -224,65 +225,61 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         }
     }
 
-    // ج. لوق خروج أو طرد عضو من الروم الصوتي
-    if (oldState.channelId && !newState.channelId) {
-        if (logChannel) {
-            const embed = new EmbedBuilder()
-                .setColor(0xFFA500)
-                .setAuthor({ name: oldState.member.user.tag, iconURL: oldState.member.user.displayAvatarURL() })
-                .setTitle('Leave Voice Channel')
-                .setDescription(`**Member:** \`${oldState.member.user.tag}\`\n**Channel:** \`${oldState.channel ? oldState.channel.name : 'Unknown'}\``)
-                .setTimestamp();
-            logChannel.send({ embeds: [embed] });
-        }
+    // ج. لوق خروج عضو
+    if (oldState.channelId && !newState.channelId && logChannel) {
+        const embed = new EmbedBuilder()
+            .setColor(0xFFA500)
+            .setAuthor({ name: member.user.tag, iconURL: member.user.displayAvatarURL() })
+            .setTitle('Leave Voice Channel')
+            .setDescription(`**Member:** \`${member.user.tag}\`\n**Channel:** \`${oldState.channel ? oldState.channel.name : 'Unknown'}\``)
+            .setTimestamp();
+        logChannel.send({ embeds: [embed] }).catch(() => {});
     }
 
-    // د. لوق الميوت والدفن الإداري
-    if (oldState.channelId && newState.channelId && oldState.channelId === newState.channelId) {
-        if (logChannel) {
-            const channelName = newState.channel ? newState.channel.name : 'Unknown';
-            const memberTag = newState.member.user.tag;
+    // د. لوق الميوت الإداري
+    if (oldState.channelId && newState.channelId && oldState.channelId === newState.channelId && logChannel) {
+        const channelName = newState.channel ? newState.channel.name : 'Unknown';
+        const memberTag = member.user.tag;
 
-            if (!oldState.serverMute && newState.serverMute) {
-                const embed = new EmbedBuilder()
-                    .setColor(0xFF0000)
-                    .setAuthor({ name: memberTag, iconURL: newState.member.user.displayAvatarURL() })
-                    .setTitle('Server Mute Member')
-                    .setDescription(`**To:** \`${memberTag}\`\n**In:** \`${channelName}\``)
-                    .setTimestamp();
-                logChannel.send({ embeds: [embed] });
-            } else if (oldState.serverMute && !newState.serverMute) {
-                const embed = new EmbedBuilder()
-                    .setColor(0x00FF00)
-                    .setAuthor({ name: memberTag, iconURL: newState.member.user.displayAvatarURL() })
-                    .setTitle('UnMute Member')
-                    .setDescription(`**To:** \`${memberTag}\`\n**In:** \`${channelName}\``)
-                    .setTimestamp();
-                logChannel.send({ embeds: [embed] });
-            }
+        if (!oldState.serverMute && newState.serverMute) {
+            const embed = new EmbedBuilder()
+                .setColor(0xFF0000)
+                .setAuthor({ name: memberTag, iconURL: member.user.displayAvatarURL() })
+                .setTitle('Server Mute Member')
+                .setDescription(`**To:** \`${memberTag}\`\n**In:** \`${channelName}\``)
+                .setTimestamp();
+            logChannel.send({ embeds: [embed] }).catch(() => {});
+        } else if (oldState.serverMute && !newState.serverMute) {
+            const embed = new EmbedBuilder()
+                .setColor(0x00FF00)
+                .setAuthor({ name: memberTag, iconURL: member.user.displayAvatarURL() })
+                .setTitle('UnMute Member')
+                .setDescription(`**To:** \`${memberTag}\`\n**In:** \`${channelName}\``)
+                .setTimestamp();
+            logChannel.send({ embeds: [embed] }).catch(() => {});
+        }
 
-            if (!oldState.serverDeaf && newState.serverDeaf) {
-                const embed = new EmbedBuilder()
-                    .setColor(0xFF0000)
-                    .setAuthor({ name: memberTag, iconURL: newState.member.user.displayAvatarURL() })
-                    .setTitle('Server Deafen Member')
-                    .setDescription(`**To:** \`${memberTag}\`\n**In:** \`${channelName}\``)
-                    .setTimestamp();
-                logChannel.send({ embeds: [embed] });
-            } else if (oldState.serverDeaf && !newState.serverDeaf) {
-                const embed = new EmbedBuilder()
-                    .setColor(0x00FF00)
-                    .setAuthor({ name: memberTag, iconURL: newState.member.user.displayAvatarURL() })
-                    .setTitle('Server UnDeafen Member')
-                    .setDescription(`**To:** \`${memberTag}\`\n**In:** \`${channelName}\``)
-                    .setTimestamp();
-                logChannel.send({ embeds: [embed] });
-            }
+        if (!oldState.serverDeaf && newState.serverDeaf) {
+            const embed = new EmbedBuilder()
+                .setColor(0xFF0000)
+                .setAuthor({ name: memberTag, iconURL: member.user.displayAvatarURL() })
+                .setTitle('Server Deafen Member')
+                .setDescription(`**To:** \`${memberTag}\`\n**In:** \`${channelName}\``)
+                .setTimestamp();
+            logChannel.send({ embeds: [embed] }).catch(() => {});
+        } else if (oldState.serverDeaf && !newState.serverDeaf) {
+            const embed = new EmbedBuilder()
+                .setColor(0x00FF00)
+                .setAuthor({ name: memberTag, iconURL: member.user.displayAvatarURL() })
+                .setTitle('Server UnDeafen Member')
+                .setDescription(`**To:** \`${memberTag}\`\n**In:** \`${channelName}\``)
+                .setTimestamp();
+            logChannel.send({ embeds: [embed] }).catch(() => {});
         }
     }
 });
 
-// تتبع تفاعل الشات (الرسائل)
+// تتبع تفاعل الشات
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
 
@@ -295,7 +292,7 @@ client.on('messageCreate', async (message) => {
     data.messagesCount += 1;
 });
 
-// دالة إرسال التقرير الأسبوعي لأفضل 10 أشخاص
+// دالة إرسال التقرير الأسبوعي
 async function sendWeeklyLeaderboard() {
     const leaderboardChannelId = process.env.LEADERBOARD_CHANNEL_ID;
     if (!leaderboardChannelId) return;
@@ -303,7 +300,6 @@ async function sendWeeklyLeaderboard() {
     const channel = client.channels.cache.get(leaderboardChannelId);
     if (!channel) return;
 
-    // حساب الوقت الجاري للأشخاص المتواجدين حالياً بالصوت
     for (const [userId, data] of userActivity.entries()) {
         if (data.joinTimestamp) {
             data.voiceTime += (Date.now() - data.joinTimestamp);
@@ -311,7 +307,6 @@ async function sendWeeklyLeaderboard() {
         }
     }
 
-    // ترتيب الأعضاء بناءً على إجمالي التفاعل (دقائق الصوت + عدد رسائل الشات)
     const sortedUsers = [...userActivity.entries()].sort((a, b) => {
         const scoreA = Math.floor(a[1].voiceTime / 60000) + (a[1].messagesCount * 2);
         const scoreB = Math.floor(b[1].voiceTime / 60000) + (b[1].messagesCount * 2);
@@ -340,7 +335,6 @@ async function sendWeeklyLeaderboard() {
             }]
         });
 
-        // تصفير العدادات للأسبوع القادم مع الإبقاء على تتبع من هم في الصوت حالياً
         for (const [userId, data] of userActivity.entries()) {
             data.voiceTime = 0;
             data.messagesCount = 0;
@@ -363,13 +357,12 @@ client.on('interactionCreate', async (interaction) => {
         return interaction.reply({ content: '❌ أنت لست صاحب هذا الروم!', ephemeral: true });
     }
 
-    // التقاط العضو المختار من القائمة المنسدلة
     if (interaction.isStringSelectMenu() && interaction.customId === 'select_target') {
         const targetId = interaction.values[0];
         selectedUsers.set(channel.id, targetId);
         const targetMember = await interaction.guild.members.fetch(targetId).catch(() => null);
         const name = targetMember ? targetMember.displayName : targetId;
-        return interaction.reply({ content: `✅ تم اختيار العضو: **${name}** (الآن اضغط على زر الأمر المطلوب مثل ميوت أو طرد)`, ephemeral: true });
+        return interaction.reply({ content: `✅ تم اختيار العضو: **${name}**`, ephemeral: true });
     }
 
     if (interaction.isButton()) {
@@ -385,13 +378,8 @@ client.on('interactionCreate', async (interaction) => {
                 await channel.permissionOverwrites.edit(interaction.guild.id, { Connect: false });
                 await interaction.editReply({ content: '🔒 تم قفل الروم.' });
                 if (logChannel) {
-                    const embed = new EmbedBuilder()
-                        .setColor(0xFFA500)
-                        .setAuthor({ name: userTag, iconURL: interaction.user.displayAvatarURL() })
-                        .setTitle('Lock Voice Channel')
-                        .setDescription(`**By:** \`${userTag}\`\n**In:** \`${channelName}\``)
-                        .setTimestamp();
-                    logChannel.send({ embeds: [embed] });
+                    const embed = new EmbedBuilder().setColor(0xFFA500).setAuthor({ name: userTag, iconURL: interaction.user.displayAvatarURL() }).setTitle('Lock Voice Channel').setDescription(`**By:** \`${userTag}\`\n**In:** \`${channelName}\``).setTimestamp();
+                    logChannel.send({ embeds: [embed] }).catch(() => {});
                 }
                 break;
 
@@ -399,13 +387,8 @@ client.on('interactionCreate', async (interaction) => {
                 await channel.permissionOverwrites.edit(interaction.guild.id, { Connect: true });
                 await interaction.editReply({ content: '🔓 تم فتح الروم.' });
                 if (logChannel) {
-                    const embed = new EmbedBuilder()
-                        .setColor(0x00FF00)
-                        .setAuthor({ name: userTag, iconURL: interaction.user.displayAvatarURL() })
-                        .setTitle('Unlock Voice Channel')
-                        .setDescription(`**By:** \`${userTag}\`\n**In:** \`${channelName}\``)
-                        .setTimestamp();
-                    logChannel.send({ embeds: [embed] });
+                    const embed = new EmbedBuilder().setColor(0x00FF00).setAuthor({ name: userTag, iconURL: interaction.user.displayAvatarURL() }).setTitle('Unlock Voice Channel').setDescription(`**By:** \`${userTag}\`\n**In:** \`${channelName}\``).setTimestamp();
+                    logChannel.send({ embeds: [embed] }).catch(() => {});
                 }
                 break;
 
@@ -413,13 +396,8 @@ client.on('interactionCreate', async (interaction) => {
                 await channel.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: false });
                 await interaction.editReply({ content: '👻 تم إخفاء الروم.' });
                 if (logChannel) {
-                    const embed = new EmbedBuilder()
-                        .setColor(0x5865F2)
-                        .setAuthor({ name: userTag, iconURL: interaction.user.displayAvatarURL() })
-                        .setTitle('Hide Voice Channel')
-                        .setDescription(`**By:** \`${userTag}\`\n**In:** \`${channelName}\``)
-                        .setTimestamp();
-                    logChannel.send({ embeds: [embed] });
+                    const embed = new EmbedBuilder().setColor(0x5865F2).setAuthor({ name: userTag, iconURL: interaction.user.displayAvatarURL() }).setTitle('Hide Voice Channel').setDescription(`**By:** \`${userTag}\`\n**In:** \`${channelName}\``).setTimestamp();
+                    logChannel.send({ embeds: [embed] }).catch(() => {});
                 }
                 break;
 
@@ -427,13 +405,8 @@ client.on('interactionCreate', async (interaction) => {
                 await channel.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: true });
                 await interaction.editReply({ content: '👁️ تم إظهار الروم.' });
                 if (logChannel) {
-                    const embed = new EmbedBuilder()
-                        .setColor(0x5865F2)
-                        .setAuthor({ name: userTag, iconURL: interaction.user.displayAvatarURL() })
-                        .setTitle('Show Voice Channel')
-                        .setDescription(`**By:** \`${userTag}\`\n**In:** \`${channelName}\``)
-                        .setTimestamp();
-                    logChannel.send({ embeds: [embed] });
+                    const embed = new EmbedBuilder().setColor(0x5865F2).setAuthor({ name: userTag, iconURL: interaction.user.displayAvatarURL() }).setTitle('Show Voice Channel').setDescription(`**By:** \`${userTag}\`\n**In:** \`${channelName}\``).setTimestamp();
+                    logChannel.send({ embeds: [embed] }).catch(() => {});
                 }
                 break;
 
@@ -469,13 +442,8 @@ client.on('interactionCreate', async (interaction) => {
                 });
                 await interaction.editReply({ content: `✅ تم إعطاء (سماح اداري) لـ <@${targetId}>.` });
                 if (logChannel) {
-                    const embed = new EmbedBuilder()
-                        .setColor(0x00FF00)
-                        .setAuthor({ name: userTag, iconURL: interaction.user.displayAvatarURL() })
-                        .setTitle('Grant Admin Permissions (Allow)')
-                        .setDescription(`**To:** \`${targetTag}\`\n**By:** \`${userTag}\`\n**In:** \`${channelName}\``)
-                        .setTimestamp();
-                    logChannel.send({ embeds: [embed] });
+                    const embed = new EmbedBuilder().setColor(0x00FF00).setAuthor({ name: userTag, iconURL: interaction.user.displayAvatarURL() }).setTitle('Grant Admin Permissions').setDescription(`**To:** \`${targetTag}\`\n**By:** \`${userTag}\`\n**In:** \`${channelName}\``).setTimestamp();
+                    logChannel.send({ embeds: [embed] }).catch(() => {});
                 }
                 break;
             }
@@ -492,15 +460,10 @@ client.on('interactionCreate', async (interaction) => {
                     DeafenMembers: false,
                     MoveMembers: false
                 });
-                await interaction.editReply({ content: `🚫 تم تنفيذ (ازالة اداري) عن <@${targetId}> بنجاح.` });
+                await interaction.editReply({ content: `🚫 تم تنفيذ (ازالة اداري) عن <@${targetId}>.` });
                 if (logChannel) {
-                    const embed = new EmbedBuilder()
-                        .setColor(0xFF0000)
-                        .setAuthor({ name: userTag, iconURL: interaction.user.displayAvatarURL() })
-                        .setTitle('Remove Admin Permissions (Deny/Reset)')
-                        .setDescription(`**To:** \`${targetTag}\`\n**By:** \`${userTag}\`\n**In:** \`${channelName}\``)
-                        .setTimestamp();
-                    logChannel.send({ embeds: [embed] });
+                    const embed = new EmbedBuilder().setColor(0xFF0000).setAuthor({ name: userTag, iconURL: interaction.user.displayAvatarURL() }).setTitle('Remove Admin Permissions').setDescription(`**To:** \`${targetTag}\`\n**By:** \`${userTag}\`\n**In:** \`${channelName}\``).setTimestamp();
+                    logChannel.send({ embeds: [embed] }).catch(() => {});
                 }
                 break;
             }
@@ -512,16 +475,11 @@ client.on('interactionCreate', async (interaction) => {
                 const targetMember = await interaction.guild.members.fetch(targetId).catch(() => null);
                 if (targetMember && targetMember.voice.channelId === channel.id) {
                     const targetTag = targetMember.user.tag;
-                    await targetMember.voice.disconnect();
+                    await targetMember.voice.disconnect().catch(() => {});
                     await interaction.editReply({ content: `🚫 تم طرد <@${targetId}>.` });
                     if (logChannel) {
-                        const embed = new EmbedBuilder()
-                            .setColor(0xFF0000)
-                            .setAuthor({ name: userTag, iconURL: interaction.user.displayAvatarURL() })
-                            .setTitle('Kick Member from Voice')
-                            .setDescription(`**To:** \`${targetTag}\`\n**By:** \`${userTag}\`\n**In:** \`${channelName}\``)
-                            .setTimestamp();
-                        logChannel.send({ embeds: [embed] });
+                        const embed = new EmbedBuilder().setColor(0xFF0000).setAuthor({ name: userTag, iconURL: interaction.user.displayAvatarURL() }).setTitle('Kick Member from Voice').setDescription(`**To:** \`${targetTag}\`\n**By:** \`${userTag}\`\n**In:** \`${channelName}\``).setTimestamp();
+                        logChannel.send({ embeds: [embed] }).catch(() => {});
                     }
                 } else {
                     await interaction.editReply({ content: '❌ العضو غير موجود بالروم.' });
@@ -536,16 +494,11 @@ client.on('interactionCreate', async (interaction) => {
                 const targetMember = await interaction.guild.members.fetch(targetId).catch(() => null);
                 if (targetMember && targetMember.voice.channelId === channel.id) {
                     const targetTag = targetMember.user.tag;
-                    await targetMember.voice.setMute(true);
+                    await targetMember.voice.setMute(true).catch(() => {});
                     await interaction.editReply({ content: `🔇 تم إعطاء Server Mute لـ <@${targetId}>.` });
                     if (logChannel) {
-                        const embed = new EmbedBuilder()
-                            .setColor(0xFF0000)
-                            .setAuthor({ name: userTag, iconURL: interaction.user.displayAvatarURL() })
-                            .setTitle('Server Mute Member')
-                            .setDescription(`**To:** \`${targetTag}\`\n**By:** \`${userTag}\`\n**In:** \`${channelName}\``)
-                            .setTimestamp();
-                        logChannel.send({ embeds: [embed] });
+                        const embed = new EmbedBuilder().setColor(0xFF0000).setAuthor({ name: userTag, iconURL: interaction.user.displayAvatarURL() }).setTitle('Server Mute Member').setDescription(`**To:** \`${targetTag}\`\n**By:** \`${userTag}\`\n**In:** \`${channelName}\``).setTimestamp();
+                        logChannel.send({ embeds: [embed] }).catch(() => {});
                     }
                 } else {
                     await interaction.editReply({ content: '❌ العضو غير موجود بالروم.' });
@@ -560,16 +513,11 @@ client.on('interactionCreate', async (interaction) => {
                 const targetMember = await interaction.guild.members.fetch(targetId).catch(() => null);
                 if (targetMember && targetMember.voice.channelId === channel.id) {
                     const targetTag = targetMember.user.tag;
-                    await targetMember.voice.setMute(false);
+                    await targetMember.voice.setMute(false).catch(() => {});
                     await interaction.editReply({ content: `🔊 تم فك Server Mute عن <@${targetId}>.` });
                     if (logChannel) {
-                        const embed = new EmbedBuilder()
-                            .setColor(0x00FF00)
-                            .setAuthor({ name: userTag, iconURL: interaction.user.displayAvatarURL() })
-                            .setTitle('UnMute Member')
-                            .setDescription(`**To:** \`${targetTag}\`\n**By:** \`${userTag}\`\n**In:** \`${channelName}\``)
-                            .setTimestamp();
-                        logChannel.send({ embeds: [embed] });
+                        const embed = new EmbedBuilder().setColor(0x00FF00).setAuthor({ name: userTag, iconURL: interaction.user.displayAvatarURL() }).setTitle('UnMute Member').setDescription(`**To:** \`${targetTag}\`\n**By:** \`${userTag}\`\n**In:** \`${channelName}\``).setTimestamp();
+                        logChannel.send({ embeds: [embed] }).catch(() => {});
                     }
                 } else {
                     await interaction.editReply({ content: '❌ العضو غير موجود بالروم.' });
@@ -588,13 +536,8 @@ client.on('interactionCreate', async (interaction) => {
 
                 await interaction.editReply({ content: '🗑️ جاري حذف الروم...' });
                 if (logChannel) {
-                    const embed = new EmbedBuilder()
-                        .setColor(0xFF0000)
-                        .setAuthor({ name: userTag, iconURL: interaction.user.displayAvatarURL() })
-                        .setTitle('Delete Channel Manually')
-                        .setDescription(`**By:** \`${userTag}\`\n**Channel:** \`${channelName}\``)
-                        .setTimestamp();
-                    logChannel.send({ embeds: [embed] });
+                    const embed = new EmbedBuilder().setColor(0xFF0000).setAuthor({ name: userTag, iconURL: interaction.user.displayAvatarURL() }).setTitle('Delete Channel Manually').setDescription(`**By:** \`${userTag}\`\n**Channel:** \`${channelName}\``).setTimestamp();
+                    logChannel.send({ embeds: [embed] }).catch(() => {});
                 }
                 await channel.delete().catch(() => {});
                 break;
@@ -608,32 +551,22 @@ client.on('interactionCreate', async (interaction) => {
 
         if (interaction.customId === 'modal_rename') {
             const newName = interaction.fields.getTextInputValue('new_name');
-            await channel.setName(newName);
+            await channel.setName(newName).catch(() => {});
             await interaction.editReply({ content: `✅ تم تغيير اسم الروم إلى: **${newName}**` });
             if (logChannel) {
-                const embed = new EmbedBuilder()
-                    .setColor(0x5865F2)
-                    .setAuthor({ name: userTag, iconURL: interaction.user.displayAvatarURL() })
-                    .setTitle('Rename Voice Channel')
-                    .setDescription(`**New Name:** \`${newName}\`\n**By:** \`${userTag}\``)
-                    .setTimestamp();
-                logChannel.send({ embeds: [embed] });
+                const embed = new EmbedBuilder().setColor(0x5865F2).setAuthor({ name: userTag, iconURL: interaction.user.displayAvatarURL() }).setTitle('Rename Voice Channel').setDescription(`**New Name:** \`${newName}\`\n**By:** \`${userTag}\``).setTimestamp();
+                logChannel.send({ embeds: [embed] }).catch(() => {});
             }
         }
 
         if (interaction.customId === 'modal_limit') {
             const limit = parseInt(interaction.fields.getTextInputValue('new_limit'));
             if (isNaN(limit) || limit < 0 || limit > 99) return interaction.editReply({ content: '❌ يرجى إدخال رقم صحيح.' });
-            await channel.setUserLimit(limit);
+            await channel.setUserLimit(limit).catch(() => {});
             await interaction.editReply({ content: `✅ تم تغيير حد الأعضاء إلى: **${limit}**` });
             if (logChannel) {
-                const embed = new EmbedBuilder()
-                    .setColor(0x5865F2)
-                    .setAuthor({ name: userTag, iconURL: interaction.user.displayAvatarURL() })
-                    .setTitle('Change Channel User Limit')
-                    .setDescription(`**Limit:** \`${limit}\`\n**By:** \`${userTag}\`\n**In:** \`${channelName}\``)
-                    .setTimestamp();
-                logChannel.send({ embeds: [embed] });
+                const embed = new EmbedBuilder().setColor(0x5865F2).setAuthor({ name: userTag, iconURL: interaction.user.displayAvatarURL() }).setTitle('Change Channel User Limit').setDescription(`**Limit:** \`${limit}\`\n**By:** \`${userTag}\`\n**In:** \`${channelName}\``).setTimestamp();
+                logChannel.send({ embeds: [embed] }).catch(() => {});
             }
         }
     }
