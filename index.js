@@ -51,16 +51,12 @@ client.once('ready', async () => {
         }
     }
 
-    setupPermanentControlPanel();
     updateLeaderboard();
     setInterval(() => updateLeaderboard(), 60 * 60 * 1000); 
 });
 
-// 🎨 بناء الأزرار والقوائم للروم المؤقت وقناة الكنترول
 function buildTempRoomControlUI(memberMention) {
-    const content = memberMention 
-        ? `أهلاً بك في رومك المؤقت، ${memberMention} استخدم الأزرار والقائمة أدناه للتحكم:`
-        : 'Use these controls to manage your temporary voice room:';
+    const content = `أهلاً بك في رومك المؤقت، ${memberMention} استخدم الأزرار والقائمة أدناه للتحكم:`;
 
     const row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('btn_show').setLabel('إظهار').setStyle(ButtonStyle.Secondary),
@@ -90,28 +86,6 @@ function buildTempRoomControlUI(memberMention) {
     );
 
     return { content, components: [row1, row2, row3, userSelect] };
-}
-
-async function setupPermanentControlPanel() {
-    const controlChannelId = process.env.CONTROL_CHANNEL_ID;
-    if (!controlChannelId) return;
-
-    const channel = client.channels.cache.get(controlChannelId);
-    if (!channel) return;
-
-    try {
-        const panelData = buildTempRoomControlUI();
-        const messages = await channel.messages.fetch({ limit: 10 }).catch(() => null);
-        let existingMsg = messages ? messages.find(m => m.author.id === client.user.id) : null;
-
-        if (existingMsg) {
-            await existingMsg.edit(panelData);
-        } else {
-            await channel.send(panelData);
-        }
-    } catch (error) {
-        console.error('خطأ أثناء إرسال اللوحة الثابتة:', error);
-    }
 }
 
 function formatTime(ms) {
@@ -288,8 +262,6 @@ async function updateLeaderboard() {
     if (channelIds.length === 0) return;
 
     for (const channelId of channelIds) {
-        if (channelId === process.env.CONTROL_CHANNEL_ID) continue;
-
         const channel = client.channels.cache.get(channelId);
         if (!channel) continue;
 
@@ -337,7 +309,6 @@ async function updateLeaderboard() {
     }
 }
 
-// إنشاء الروم الصوتي المؤقت + إرسال الرسالة الترحيبية داخله فوراً
 client.on('voiceStateUpdate', async (oldState, newState) => {
     const guild = newState.guild || oldState.guild;
     const member = newState.member || oldState.member;
@@ -375,7 +346,6 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
             tempVoiceChannels.set(tempVoiceChannel.id, member.id);
             await member.voice.setChannel(tempVoiceChannel).catch(() => {});
 
-            // إرسال رسالة التحكم تلقائياً داخل الشات الصوتي للروم المفتوح حديثاً
             const welcomeData = buildTempRoomControlUI(`<@${member.id}>`);
             await tempVoiceChannel.send(welcomeData).catch(() => {});
 
@@ -393,7 +363,6 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     }
 });
 
-// التعامل مع الأزرار والقائمة
 client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton() && interaction.customId === 'btn_my_points') {
         const totalMs = getUserTotalTime(interaction.user.id);
@@ -495,7 +464,7 @@ client.on('interactionCreate', async (interaction) => {
         } else if (interaction.customId === 'select_btn_block') {
             await voiceChannel.permissionOverwrites.edit(targetId, { Connect: false, ViewChannel: false });
             if (targetMember.voice.channelId === voiceChannel.id) await targetMember.voice.disconnect();
-            await interaction.editReply({ content: `🚫 تم حظر/ميوت <@${targetId}>.` });
+            await interaction.editReply({ content: `🚫 تم ميوت/حظر <@${targetId}>.` });
         } else if (interaction.customId === 'select_btn_unblock') {
             await voiceChannel.permissionOverwrites.delete(targetId);
             await interaction.editReply({ content: `🔓 تم إلغاء الحظر عن <@${targetId}>.` });
