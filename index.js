@@ -33,16 +33,16 @@ const roomIntervals = new Map();
 
 // تخزين بيانات الصوت فقط للتفاعل الجديد
 const userVoiceActivity = new Map(); // userId => { voiceTime, joinTimestamp }
-let leaderboardMessageId = null;     // لتعديل نفس الرسالة كل ساعة
+let leaderboardMessageId = null;     // لتعديل نفس الرسالة كل دقيقة
 
 client.once('ready', () => {
     console.log(`🤖 البوت متصل باسم: ${client.user.tag}`);
 
-    // تشغيل تحديث التوب 10 فور تشغيل البوت وتكراره كل ساعة (60 دقيقة)
+    // ⚡ تعديل التجربة: تشغيل التحديث فوراً وتكراره كل دقيقة (60,000 ملي ثانية)
     updateHourlyLeaderboard();
     setInterval(() => {
         updateHourlyLeaderboard();
-    }, 60 * 60 * 1000);
+    }, 60 * 1000); 
 });
 
 // دالة لتحديث لوحة التحكم والقائمة المنسدلة للرومات المؤقتة
@@ -227,7 +227,7 @@ async function generateLeaderboardCanvas(topUsers, guild) {
     return canvas.toBuffer('image/png');
 }
 
-// دالة إرسال / تحديث التقرير كل ساعة
+// دالة إرسال / تحديث التقرير تلقائياً
 async function updateHourlyLeaderboard() {
     const leaderboardChannelId = process.env.LEADERBOARD_CHANNEL_ID;
     if (!leaderboardChannelId) return;
@@ -263,8 +263,9 @@ async function updateHourlyLeaderboard() {
         new ButtonBuilder().setCustomId('btn_reset_points').setLabel('تصفير').setStyle(ButtonStyle.Danger).setEmoji('🔄')
     );
 
+    // ⚡ تعديل التجربة: النص المعروض
     const messageContent = {
-        content: '⏳ **سيتم التحديث خلال ساعة**',
+        content: '⏳ **سيتم التحديث خلال دقيقة**',
         files: [attachment],
         components: [row]
     };
@@ -370,7 +371,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
 
 // 2. التحكم بالأزرار والنوافذ التفاعلية
 client.on('interactionCreate', async (interaction) => {
-    // التفاعل مع أزرار التوب 10 الجديد (نقاطي / تصفير)
+    // التفاعل مع أزرار التوب 10 (نقاطي / تصفير)
     if (interaction.isButton() && interaction.customId === 'btn_my_points') {
         const data = userVoiceActivity.get(interaction.user.id);
         let time = data ? data.voiceTime : 0;
