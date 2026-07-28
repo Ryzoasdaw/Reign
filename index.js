@@ -50,7 +50,7 @@ async function updateControlPanel(channel, ownerId) {
     );
 
     const row2 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('btn_allow').setLabel('سماح').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('btn_allow').setLabel('يقدر يعطي ميوت و دفن وطرد').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('btn_deny').setLabel('منع').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('btn_kick').setLabel('طرد').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('btn_limit').setLabel('حد').setStyle(ButtonStyle.Secondary)
@@ -66,7 +66,7 @@ async function updateControlPanel(channel, ownerId) {
     const selectMenu = new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
             .setCustomId('select_target')
-            .setPlaceholder('اختر العضو لتطبيق الميوت أو الطرد أو السماح...')
+            .setPlaceholder('اختر العضو لتطبيق الصلاحيات أو الميوت أو الطرد...')
             .addOptions(options)
     );
 
@@ -361,13 +361,20 @@ client.on('interactionCreate', async (interaction) => {
                 const targetMember = await interaction.guild.members.fetch(targetId).catch(() => null);
                 const targetTag = targetMember ? targetMember.user.tag : targetId;
 
-                await channel.permissionOverwrites.edit(targetId, { Connect: true, ViewChannel: true });
-                await interaction.editReply({ content: `✅ تم السماح لـ <@${targetId}>.` });
+                // إعطاء صلاحية دخول الروم + صلاحية الميوت، التعطيل الصوتي، وطرد الأعضاء (MoveMembers تمثل صلاحية طرد/سحب الأعضاء)
+                await channel.permissionOverwrites.edit(targetId, { 
+                    Connect: true, 
+                    ViewChannel: true,
+                    MuteMembers: true,
+                    DeafenMembers: true,
+                    MoveMembers: true
+                });
+                await interaction.editReply({ content: `✅ تم إعطاء صلاحية (يقدر يعطي ميوت و دفن وطرد) لـ <@${targetId}>.` });
                 if (logChannel) {
                     const embed = new EmbedBuilder()
                         .setColor(0x00FF00)
                         .setAuthor({ name: userTag, iconURL: interaction.user.displayAvatarURL() })
-                        .setTitle('Allow Member')
+                        .setTitle('Grant Mute, Deafen & Move/Kick Permission')
                         .setDescription(`**To:** \`${targetTag}\`\n**By:** \`${userTag}\`\n**In:** \`${channelName}\``)
                         .setTimestamp();
                     logChannel.send({ embeds: [embed] });
@@ -382,8 +389,14 @@ client.on('interactionCreate', async (interaction) => {
                 const targetMember = await interaction.guild.members.fetch(targetId).catch(() => null);
                 const targetTag = targetMember ? targetMember.user.tag : targetId;
 
-                await channel.permissionOverwrites.edit(targetId, { Connect: false });
-                await interaction.editReply({ content: `🚫 تم منع <@${targetId}>.` });
+                // إلغاء صلاحية الدخول والصلاحيات المضافة
+                await channel.permissionOverwrites.edit(targetId, { 
+                    Connect: false,
+                    MuteMembers: false,
+                    DeafenMembers: false,
+                    MoveMembers: false
+                });
+                await interaction.editReply({ content: `🚫 تم منع وإزالة صلاحيات <@${targetId}>.` });
                 if (logChannel) {
                     const embed = new EmbedBuilder()
                         .setColor(0xFF0000)
