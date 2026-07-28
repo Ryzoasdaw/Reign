@@ -415,8 +415,9 @@ client.on('interactionCreate', async (interaction) => {
             return voiceChannel.delete().catch(() => {});
         }
 
+        // أزرار الطرد والميوت والفك أصبحت تفتح قائمة لاختيار الأعضاء (UserSelectMenu)
         if (['btn_kick', 'btn_block', 'btn_unblock'].includes(customId)) {
-            const userSelect = new UserSelectMenuBuilder().setCustomId(`select_${customId}`).setPlaceholder('اختر العضو المحدد...');
+            const userSelect = new UserSelectMenuBuilder().setCustomId(`select_${customId}`).setPlaceholder('...اختر العضو المحدد');
             return interaction.reply({ components: [new ActionRowBuilder().addComponents(userSelect)], ephemeral: true });
         }
 
@@ -464,10 +465,10 @@ client.on('interactionCreate', async (interaction) => {
         } else if (interaction.customId === 'select_btn_block') {
             await voiceChannel.permissionOverwrites.edit(targetId, { Connect: false, ViewChannel: false });
             if (targetMember.voice.channelId === voiceChannel.id) await targetMember.voice.disconnect();
-            await interaction.editReply({ content: `🚫 تم ميوت/حظر <@${targetId}>.` });
+            await interaction.editReply({ content: `🚫 تم ميوت/حظر <@${targetId}> من رومك المؤقت.` });
         } else if (interaction.customId === 'select_btn_unblock') {
             await voiceChannel.permissionOverwrites.delete(targetId);
-            await interaction.editReply({ content: `🔓 تم إلغاء الحظر عن <@${targetId}>.` });
+            await interaction.editReply({ content: `🔓 تم إلغاء الميوت/الحظر عن <@${targetId}>.` });
         }
     }
 
