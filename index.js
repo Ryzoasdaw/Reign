@@ -32,7 +32,8 @@ const client = new Client({
 // حفظ الرومات الصوتيّة وتكليف القناة النصيّة لكل صاحب روم
 const tempChannels = new Map(); // voiceChannelId -> { ownerId, textChannelId }
 const userVoiceActivity = new Map(); 
-let leaderboardMessageId = null;
+// حفظ أرقام الرسائل لكل قناة صدارة لتعديلها بدلاً من إرسال رسائل جديدة كل مرة
+const leaderboardMessages = new Map(); // channelId -> messageId
 
 client.once('ready', async () => {
     console.log(`🤖 البوت متصل باسم: ${client.user.tag}`);
@@ -273,51 +274,61 @@ async function generateLeaderboardCanvas(topUsers, guild) {
     return canvas.toBuffer('image/png');
 }
 
+// 🔄 دالة تحديث الصدارة في القناتين النصيتين معاً
 async function updateLeaderboard() {
-    const leaderboardChannelId = process.env.LEADERBOARD_CHANNEL_ID;
-    if (!leaderboardChannelId) return;
+    // جلب آيدي القناتين من المتغيرات البيئية
+    const channelIds = [
+        process.env.LEADERBOARD_CHANNEL_ID_1,
+        process.env.LEADERBOARD_CHANNEL_ID_2
+    ].filter(Boolean);
 
-    const channel = client.channels.cache.get(leaderboardChannelId);
-    if (!channel) return;
+    if (channelIds.length === 0) return;
 
-    const topData = [];
+    for (const channelId of channelIds) {
+        const channel = client.channels.cache.get(channelId);
+        if (!channel) continue;
 
-    for (const [userId] of userVoiceActivity.entries()) {
-        const totalTime = getUserTotalTime(userId);
-        if (totalTime > 0) {
-            const member = await channel.guild.members.fetch(userId).catch(() => null);
-            topData.push({ userId, time: totalTime, member });
-        }
-    }
+        const topData = [];
 
-    topData.sort((a, b) => b.time - a.time);
-
-    const imageBuffer = await generateLeaderboardCanvas(topData, channel.guild);
-    const attachment = new AttachmentBuilder(imageBuffer, { name: 'leaderboard.png' });
-
-    const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('btn_my_points').setLabel('نقاطي ولفلي').setStyle(ButtonStyle.Secondary).setEmoji('⚡'),
-        new ButtonBuilder().setCustomId('btn_reset_points').setLabel('تصفير').setStyle(ButtonStyle.Danger).setEmoji('🔄')
-    );
-
-    const messageContent = {
-        content: '⚡ **تحديث مستمر للفل والصدارة كل ساعة**',
-        files: [attachment],
-        components: [row]
-    };
-
-    try {
-        if (leaderboardMessageId) {
-            const msg = await channel.messages.fetch(leaderboardMessageId).catch(() => null);
-            if (msg) {
-                await msg.edit(messageContent);
-                return;
+        for (const [userId] of userVoiceActivity.entries()) {
+            const totalTime = getUserTotalTime(userId);
+            if (totalTime > 0) {
+                const member = await channel.guild.members.fetch(userId).catch(() => null);
+                topData.push({ userId, time: totalTime, member });
             }
         }
-        const newMsg = await channel.send(messageContent);
-        leaderboardMessageId = newMsg.id;
-    } catch (error) {
-        console.error('Error updating leaderboard:', error);
+
+        topData.sort((a, b) => b.time - a.time);
+
+        const imageBuffer = await generateLeaderboardCanvas(topData, channel.guild);
+        const attachment = new AttachmentBuilder(imageBuffer, { name: 'leaderboard.png' });
+
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('btn_my_points').setLabel('نقاطي ولفلي').setStyle(ButtonStyle.Secondary).setEmoji('⚡'),
+            new ButtonBuilder().setCustomId('btn_reset_points').setLabel('تصفير').setStyle(ButtonStyle.Danger).setEmoji('🔄')
+        );
+
+        const messageContent = {
+            content: '⚡ **تحديث مستمر للفل والصدارة كل ساعة**',
+            files: [attachment],
+            components: [row]
+        };
+
+        try {
+            const existingMsgId = leaderboardMessages.get(channelId);
+            if (existingMsgId) {
+                const msg = await channel.messages.fetch(existingMsgId).catch(() => null);
+                if (msg) {
+                    await msg.edit(messageContent);
+                    continue;
+                }
+            }
+
+            const newMsg = await channel.send(messageContent);
+            leaderboardMessages.set(channelId, newMsg.id);
+        } catch (error) {
+            console.error(`Error updating leaderboard in channel ${channelId}:`, error);
+        }
     }
 }
 
