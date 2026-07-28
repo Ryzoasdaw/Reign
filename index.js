@@ -49,11 +49,13 @@ client.once('ready', async () => {
         }
     }
 
-    // التحديث كل دقيقة
+    // التحديث المباشر عند بدء التشغيل
     updateLeaderboard();
+
+    // ⏱️ التحديث كل ساعة (60 دقيقة × 60 ثانية × 1000 مللي ثانية)
     setInterval(() => {
         updateLeaderboard();
-    }, 60 * 1000); 
+    }, 60 * 60 * 1000); 
 });
 
 // 🎨 بناء لوحة التحكم الهيبة (Temp Voice Control Panel)
@@ -129,14 +131,14 @@ function getUserTotalTime(userId) {
     return data.voiceTime + currentSession;
 }
 
-// 👑 دالة حساب اللفل المباشر (زيادة حبة واحدة كل 5 دقائق + تغير اللون كل 10 لفل)
+// 👑 دالة حساب اللفل المباشر (+1 لفل كل 5 دقائق + تغير اللون كل 10 لفل)
 function getLevelInfo(totalMs) {
     const totalMinutes = Math.floor(totalMs / (1000 * 60));
     
     // لفل يزداد حبة واحدة (+1) كل 5 دقائق صوتية
     const level = Math.floor(totalMinutes / 5);
 
-    // تغيير ألوان الهيبة كل 10 لفل
+    // تغير الألوان كل 10 لفل
     const tier = Math.floor(level / 10);
     const colorPalette = [
         '#00f2fe', // Level 0 - 9: أزرق سماوي نيون
@@ -152,7 +154,7 @@ function getLevelInfo(totalMs) {
     return { level, activeColor };
 }
 
-// 🎨 رسم لوحة الصدارة الفخمة بالهيبة والألوان بدون EXP
+// 🎨 رسم لوحة الصدارة
 async function generateLeaderboardCanvas(topUsers, guild) {
     const width = 1000;
     const height = 550;
@@ -169,7 +171,7 @@ async function generateLeaderboardCanvas(topUsers, guild) {
 
     ctx.fillStyle = '#6b7280';
     ctx.font = '13px sans-serif';
-    ctx.fillText('LIVE VOICE RANKINGS • UPDATED EVERY MINUTE', 35, 68);
+    ctx.fillText('LIVE VOICE RANKINGS • UPDATED HOURLY', 35, 68);
 
     // بطاقة المركز الأول (#1 Top Card)
     ctx.fillStyle = '#0f1322';
@@ -212,7 +214,7 @@ async function generateLeaderboardCanvas(topUsers, guild) {
         ctx.font = 'bold 24px sans-serif';
         ctx.fillText(formatTime(top1.time), 130, 310);
 
-        // خط تجميلي فخم يتغير لونه حسب المستوى
+        // خط تجميلي فخم
         ctx.fillStyle = activeColor;
         ctx.beginPath();
         ctx.roundRect(50, 335, 250, 6, 3);
@@ -270,7 +272,7 @@ async function generateLeaderboardCanvas(topUsers, guild) {
             ctx.font = 'bold 12px sans-serif';
             ctx.fillText(formatTime(user.time), colX + cardWidth - 75, rowY + 30);
 
-            // خط سفلي أنيق لكل بطاقة
+            // خط سفلي أنيق
             ctx.fillStyle = activeColor;
             ctx.beginPath();
             ctx.roundRect(colX + 82, rowY + 45, 195, 4, 2);
@@ -314,7 +316,7 @@ async function updateLeaderboard() {
     );
 
     const messageContent = {
-        content: '⚡ **تحديث مستمر للفل والصدارة كل دقيقة**',
+        content: '⚡ **تحديث مستمر للفل والصدارة كل ساعة**',
         files: [attachment],
         components: [row]
     };
@@ -512,7 +514,7 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
-// Server Express
+// Express Server
 const express = require('express');
 const app = express();
 const port = process.env.PORT || 3000;
