@@ -332,7 +332,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
             const parentCategory = process.env.CATEGORY_ID || null;
 
             const tempVoiceChannel = await guild.channels.create({
-                name: `🔊 | ${member.user.username}`,
+                name: ` | ${member.user.username}`,
                 type: ChannelType.GuildVoice,
                 parent: parentCategory,
                 permissionOverwrites: [
