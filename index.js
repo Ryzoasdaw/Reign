@@ -331,8 +331,12 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         try {
             const parentCategory = process.env.CATEGORY_ID || null;
 
+            // جلب البيانات بشكل كامل لضمان ظهور اللقب الصحيح (Display Name)
+            const fetchedMember = await guild.members.fetch(member.id).catch(() => member);
+            const roomName = ` | ${fetchedMember.displayName}`;
+
             const tempVoiceChannel = await guild.channels.create({
-                name: ` | ${member.displayName}`, // تم التعديل هنا لاستخدام النك نيم (Nickname)
+                name: roomName,
                 type: ChannelType.GuildVoice,
                 parent: parentCategory,
                 permissionOverwrites: [
