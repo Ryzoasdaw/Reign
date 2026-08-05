@@ -71,7 +71,7 @@ function buildTempRoomControlUI(memberMention) {
         new ButtonBuilder().setCustomId('btn_rename').setLabel('الاسم').setStyle(ButtonStyle.Secondary)
     );
 
-    // الأزرار منفصلة بدقة: ميوت سيرفر، فك ميوت، طرد، منع دخول، وفك منع
+    // الأزرار مفصولة تماماً: ميوت سيرفر، فك ميوت، طرد، منع دخول، فك منع
     const row3 = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('btn_mute').setLabel('ميوت').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('btn_unmute').setLabel('فك ميوت').setStyle(ButtonStyle.Secondary),
