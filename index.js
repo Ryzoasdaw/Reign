@@ -71,7 +71,7 @@ function buildTempRoomControlUI(memberMention) {
         new ButtonBuilder().setCustomId('btn_rename').setLabel('الاسم').setStyle(ButtonStyle.Secondary)
     );
 
-    // الأزرار المحدثة لفصل الميوت، الطرد، الحظر، وفكها
+    // الأزرار منفصلة بدقة: ميوت سيرفر، فك ميوت، طرد، منع دخول، وفك منع
     const row3 = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('btn_mute').setLabel('ميوت').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('btn_unmute').setLabel('فك ميوت').setStyle(ButtonStyle.Secondary),
@@ -527,14 +527,14 @@ client.on('interactionCreate', async (interaction) => {
                     return interaction.editReply({ content: `➖ تم إزالة الصلاحيات الإدارية عن العضو <@${targetId}>.` });
 
                 case 'btn_mute':
-                    // إعطاء ميوت صوتي داخل الروم فقط (منع التكلم)
+                    // ميوت سيرفر (Server Mute) لمنع العضو من التكلم بشكل كامل
                     await targetMember.voice.setMute(true).catch(() => {});
-                    return interaction.editReply({ content: `🔇 تم إعطاء ميوت صوتي للعضو <@${targetId}>.` });
+                    return interaction.editReply({ content: `🔇 تم إعطاء ميوت سيرفر للعضو <@${targetId}>.` });
 
                 case 'btn_unmute':
-                    // فك الميوت الصوتي
+                    // فك ميوت السيرفر
                     await targetMember.voice.setMute(false).catch(() => {});
-                    return interaction.editReply({ content: `🔊 تم فك الميوت الصوتي عن العضو <@${targetId}>.` });
+                    return interaction.editReply({ content: `🔊 تم فك الميوت عن العضو <@${targetId}>.` });
 
                 case 'btn_kick':
                     // طرد العضو من الروم فقط دون منعه من الدخول مرة أخرى
@@ -544,7 +544,7 @@ client.on('interactionCreate', async (interaction) => {
                     return interaction.editReply({ content: `👢 تم طرد العضو <@${targetId}> من الروم.` });
 
                 case 'btn_ban':
-                    // منع دخول العضو للروم (وحظره إذا كان داخله)
+                    // منع دخول العضو للروم (وإذا كان داخله يتم طرده)
                     await voiceChannel.permissionOverwrites.edit(targetId, { Connect: false });
                     if (targetMember.voice && targetMember.voice.channelId === voiceChannel.id) {
                         await targetMember.voice.disconnect().catch(() => {});
