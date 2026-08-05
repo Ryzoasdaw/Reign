@@ -315,6 +315,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
 
     const userId = member.id;
     const userData = userVoiceActivity.get(userId) || { voiceTime: 0, joinTimestamp: null };
+    const logChannel = guild.channels.cache.get(process.env.LOG_CHANNEL_ID);
 
     if (!oldState.channelId && newState.channelId) {
         userData.joinTimestamp = Date.now();
@@ -330,8 +331,6 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     if (newState.channelId && newState.channelId === process.env.JOIN_CHANNEL_ID) {
         try {
             const parentCategory = process.env.CATEGORY_ID || null;
-
-            // جلب البيانات بشكل كامل لضمان ظهور اللقب الصحيح (Display Name)
             const fetchedMember = await guild.members.fetch(member.id).catch(() => member);
             const roomName = ` | ${fetchedMember.displayName}`;
 
@@ -350,6 +349,25 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
 
             const welcomeData = buildTempRoomControlUI(`<@${member.id}>`);
             await tempVoiceChannel.send(welcomeData).catch(() => {});
+
+            // لوق إنشاء الروم مع تعديل الكاتيجوري واسم الروم لضمان عدم ظهور unknown
+            if (logChannel) {
+                const categoryObj = parentCategory ? guild.channels.cache.get(parentCategory) : null;
+                const categoryName = categoryObj ? categoryObj.name : 'No Category';
+                
+                logChannel.send({
+                    embeds: [{
+                        color: 0x00ff87,
+                        title: 'Create Temporary Channel',
+                        fields: [
+                            { name: 'Channel', value: `🔊 ${roomName}`, inline: true },
+                            { name: 'By', value: `<@${member.id}>`, inline: true },
+                            { name: 'In', value: `# ${categoryName}`, inline: true }
+                        ],
+                        timestamp: new Date().toISOString()
+                    }]
+                }).catch(() => {});
+            }
 
         } catch (error) {
             console.error('خطأ أثناء إنشاء الروم الصوتي:', error);
@@ -393,6 +411,7 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     const voiceChannel = userVoiceChannel;
+    const logChannel = interaction.guild.channels.cache.get(process.env.LOG_CHANNEL_ID);
 
     // استقبال اختيار العضو من القائمة المنسدلة
     if (interaction.isUserSelectMenu()) {
@@ -461,7 +480,7 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         switch (customId) {
-            case 'btn_allow_admin': // سماح إداري (يعطيه صلاحيات: ميوت، دفن/منع، طرد داخل الروم)
+            case 'btn_allow_admin': // سماح إداري
                 await voiceChannel.permissionOverwrites.edit(targetId, { 
                     Connect: true, 
                     ViewChannel: true, 
@@ -469,26 +488,74 @@ client.on('interactionCreate', async (interaction) => {
                     DeafenMembers: true, 
                     MoveMembers: true 
                 });
+                
+                if (logChannel) {
+                    logChannel.send({
+                        embeds: [{
+                            color: 0x3b82f6,
+                            title: '👑 Admin Permission Granted',
+                            description: `**Room Owner:** <@${interaction.user.id}>\n**Target Member:** <@${targetId}>\n**Channel:** \`${voiceChannel.name}\``,
+                            timestamp: new Date().toISOString()
+                        }]
+                    }).catch(() => {});
+                }
+
                 await interaction.editReply({ content: `👑 تم إعطاء "سماح إداري" (ميوت، دفن، طرد) للعضو <@${targetId}> بنجاح.` });
                 break;
 
-            case 'btn_remove_admin': // إزالة إداري (تُشال منه الصلاحيات الإدارية)
+            case 'btn_remove_admin': // إزالة إداري
                 await voiceChannel.permissionOverwrites.edit(targetId, { 
                     MuteMembers: false, 
                     DeafenMembers: false, 
                     MoveMembers: false 
                 });
+
+                if (logChannel) {
+                    logChannel.send({
+                        embeds: [{
+                            color: 0x6b7280,
+                            title: '➖ Admin Permission Removed',
+                            description: `**Room Owner:** <@${interaction.user.id}>\n**Target Member:** <@${targetId}>\n**Channel:** \`${voiceChannel.name}\``,
+                            timestamp: new Date().toISOString()
+                        }]
+                    }).catch(() => {});
+                }
+
                 await interaction.editReply({ content: `➖ تم إزالة الصلاحيات الإدارية (الطرد، الدفن، الميوت) عن العضو <@${targetId}>.` });
                 break;
 
-            case 'btn_mute': // ميوت / دفن (منع الدخول أو إسكات)
+            case 'btn_mute': // ميوت / طرد / دفن
                 await voiceChannel.permissionOverwrites.edit(targetId, { Connect: false });
                 if (targetMember.voice.channelId === voiceChannel.id) await targetMember.voice.disconnect();
-                await interaction.editReply({ content: `🔇 تم عمل ميوت/منع للعضو <@${targetId}>.` });
+
+                if (logChannel) {
+                    logChannel.send({
+                        embeds: [{
+                            color: 0xff3b30,
+                            title: '👢 Voice Kick / Mute (دفن/طرد)',
+                            description: `**Room Owner:** <@${interaction.user.id}>\n**Kicked/Muted Member:** <@${targetId}>\n**Channel:** \`${voiceChannel.name}\``,
+                            timestamp: new Date().toISOString()
+                        }]
+                    }).catch(() => {});
+                }
+
+                await interaction.editReply({ content: `🔇 تم عمل ميوت/منع/طرد للعضو <@${targetId}>.` });
                 break;
 
             case 'btn_unmute': // فك الميوت / الحظر
                 await voiceChannel.permissionOverwrites.delete(targetId);
+
+                if (logChannel) {
+                    logChannel.send({
+                        embeds: [{
+                            color: 0x00ff87,
+                            title: '🔓 Unmute / Unban (فك)',
+                            description: `**Room Owner:** <@${interaction.user.id}>\n**Target Member:** <@${targetId}>\n**Channel:** \`${voiceChannel.name}\``,
+                            timestamp: new Date().toISOString()
+                        }]
+                    }).catch(() => {});
+                }
+
                 await interaction.editReply({ content: `🔓 تم فك الميوت والحظر عن العضو <@${targetId}>.` });
                 break;
         }
