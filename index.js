@@ -30,7 +30,7 @@ const client = new Client({
 const tempVoiceChannels = new Map(); 
 const userVoiceActivity = new Map(); 
 const leaderboardMessages = new Map(); 
-const selectedTargets = new Map(); // لتخزين العضو المختار لكل مستخدم
+const selectedTargets = new Map();
 
 client.once('ready', async () => {
     console.log(`🤖 البوت متصل باسم: ${client.user.tag}`);
@@ -71,10 +71,17 @@ function buildTempRoomControlUI(memberMention) {
         new ButtonBuilder().setCustomId('btn_rename').setLabel('الاسم').setStyle(ButtonStyle.Secondary)
     );
 
+    // الأزرار المحدثة لفصل الميوت، الطرد، الحظر، وفكها
     const row3 = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('btn_mute').setLabel('ميوت').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('btn_unmute').setLabel('فك').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('btn_delete').setLabel('حذف').setStyle(ButtonStyle.Danger)
+        new ButtonBuilder().setCustomId('btn_unmute').setLabel('فك ميوت').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('btn_kick').setLabel('طرد').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('btn_ban').setLabel('منع دخول').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('btn_unban').setLabel('فك منع').setStyle(ButtonStyle.Secondary)
+    );
+
+    const row4 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('btn_delete').setLabel('حذف الروم').setStyle(ButtonStyle.Danger)
     );
 
     const userSelect = new ActionRowBuilder().addComponents(
@@ -83,7 +90,7 @@ function buildTempRoomControlUI(memberMention) {
             .setPlaceholder('اختيار العضو')
     );
 
-    return { content, components: [row1, row2, row3, userSelect] };
+    return { content, components: [row1, row2, row3, row4, userSelect] };
 }
 
 function formatTime(ms) {
@@ -275,21 +282,21 @@ async function updateLeaderboard() {
 
         topData.sort((a, b) => b.time - a.time);
 
-        const imageBuffer = await generateLeaderboardCanvas(topData, channel.guild);
-        const attachment = new AttachmentBuilder(imageBuffer, { name: 'leaderboard.png' });
-
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('btn_my_points').setLabel('نقاطي ولفلي').setStyle(ButtonStyle.Secondary).setEmoji('⚡'),
-            new ButtonBuilder().setCustomId('btn_reset_points').setLabel('تصفير').setStyle(ButtonStyle.Danger).setEmoji('🔄')
-        );
-
-        const messageContent = {
-            content: '⚡ **تحديث مستمر للفل والصدارة كل ساعة**',
-            files: [attachment],
-            components: [row]
-        };
-
         try {
+            const imageBuffer = await generateLeaderboardCanvas(topData, channel.guild);
+            const attachment = new AttachmentBuilder(imageBuffer, { name: 'leaderboard.png' });
+
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('btn_my_points').setLabel('نقاطي ولفلي').setStyle(ButtonStyle.Secondary).setEmoji('⚡'),
+                new ButtonBuilder().setCustomId('btn_reset_points').setLabel('تصفير').setStyle(ButtonStyle.Danger).setEmoji('🔄')
+            );
+
+            const messageContent = {
+                content: '⚡ **تحديث مستمر للفل والصدارة كل ساعة**',
+                files: [attachment],
+                components: [row]
+            };
+
             const existingMsgId = leaderboardMessages.get(channelId);
             if (existingMsgId) {
                 const msg = await channel.messages.fetch(existingMsgId).catch(() => null);
@@ -350,7 +357,6 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
             const welcomeData = buildTempRoomControlUI(`<@${member.id}>`);
             await tempVoiceChannel.send(welcomeData).catch(() => {});
 
-            // لوق إنشاء الروم مع تعديل الكاتيجوري واسم الروم لضمان عدم ظهور unknown
             if (logChannel) {
                 const categoryObj = parentCategory ? guild.channels.cache.get(parentCategory) : null;
                 const categoryName = categoryObj ? categoryObj.name : 'No Category';
@@ -384,197 +390,199 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
 });
 
 client.on('interactionCreate', async (interaction) => {
-    if (interaction.isButton() && interaction.customId === 'btn_my_points') {
-        const totalMs = getUserTotalTime(interaction.user.id);
-        const { level } = getLevelInfo(totalMs);
-        return interaction.reply({ content: `⚡ **المستوى الحالي:** \`LVL ${level}\`\n🎙️ **الوقت:** \`${formatTime(totalMs)}\``, ephemeral: true });
-    }
-
-    if (interaction.isButton() && interaction.customId === 'btn_reset_points') {
-        if (interaction.user.id !== OWNER_ID) return interaction.reply({ content: '❌ هذا الزر للمالك فقط!', ephemeral: true });
-        userVoiceActivity.clear();
-        await updateLeaderboard();
-        return interaction.reply({ content: '🔄 تم تصفير البيانات بنجاح!', ephemeral: true });
-    }
-
-    const userVoiceChannel = interaction.member.voice?.channel;
-
-    if (interaction.isButton() || interaction.isUserSelectMenu() || interaction.isModalSubmit()) {
-        if (!userVoiceChannel || !tempVoiceChannels.has(userVoiceChannel.id)) {
-            return interaction.reply({ content: '⚠️ يجب أن تكون متواجداً داخل رومك الصوتي المؤقت لاستخدام اللوحة!', ephemeral: true });
+    try {
+        if (interaction.isButton() && interaction.customId === 'btn_my_points') {
+            const totalMs = getUserTotalTime(interaction.user.id);
+            const { level } = getLevelInfo(totalMs);
+            return interaction.reply({ content: `⚡ **المستوى الحالي:** \`LVL ${level}\`\n🎙️ **الوقت:** \`${formatTime(totalMs)}\``, ephemeral: true });
         }
 
-        const roomOwnerId = tempVoiceChannels.get(userVoiceChannel.id);
-        if (interaction.user.id !== roomOwnerId) {
-            return interaction.reply({ content: '❌ أنت لست صاحب هذا الروم الصوتي المؤقت!', ephemeral: true });
-        }
-    }
-
-    const voiceChannel = userVoiceChannel;
-    const logChannel = interaction.guild.channels.cache.get(process.env.LOG_CHANNEL_ID);
-
-    // استقبال اختيار العضو من القائمة المنسدلة
-    if (interaction.isUserSelectMenu()) {
-        if (interaction.customId === 'select_target_user') {
-            const targetId = interaction.values[0];
-            selectedTargets.set(interaction.user.id, targetId);
-            const targetMember = await interaction.guild.members.fetch(targetId).catch(() => null);
-            const name = targetMember ? targetMember.displayName : targetId;
-            return interaction.reply({ content: `✅ تم تحديد العضو: **${name}**. يمكنك الآن الضغط على (سماح إداري، ميوت، فك...)`, ephemeral: true });
-        }
-    }
-
-    if (interaction.isButton()) {
-        const customId = interaction.customId;
-
-        if (customId === 'btn_rename') {
-            const modal = new ModalBuilder().setCustomId('modal_rename').setTitle('تغيير اسم الروم');
-            const input = new TextInputBuilder().setCustomId('input_name').setLabel('الاسم الجديد').setStyle(TextInputStyle.Short).setRequired(true);
-            modal.addComponents(new ActionRowBuilder().addComponents(input));
-            return interaction.showModal(modal);
+        if (interaction.isButton() && interaction.customId === 'btn_reset_points') {
+            if (interaction.user.id !== OWNER_ID) return interaction.reply({ content: '❌ هذا الزر للمالك فقط!', ephemeral: true });
+            userVoiceActivity.clear();
+            await updateLeaderboard();
+            return interaction.reply({ content: '🔄 تم تصفير البيانات بنجاح!', ephemeral: true });
         }
 
-        if (customId === 'btn_limit') {
-            const modal = new ModalBuilder().setCustomId('modal_limit').setTitle('تحديد عدد الأعضاء');
-            const input = new TextInputBuilder().setCustomId('input_limit').setLabel('العدد (0 للمفتوح)').setStyle(TextInputStyle.Short).setRequired(true);
-            modal.addComponents(new ActionRowBuilder().addComponents(input));
-            return interaction.showModal(modal);
-        }
+        const userVoiceChannel = interaction.member.voice?.channel;
 
-        if (customId === 'btn_delete') {
-            await interaction.reply({ content: '🗑️ جاري حذف الروم...', ephemeral: true });
-            tempVoiceChannels.delete(voiceChannel.id);
-            selectedTargets.delete(interaction.user.id);
-            return voiceChannel.delete().catch(() => {});
-        }
+        if (interaction.isButton() || interaction.isUserSelectMenu() || interaction.isModalSubmit()) {
+            if (!userVoiceChannel || !tempVoiceChannels.has(userVoiceChannel.id)) {
+                return interaction.reply({ content: '⚠️ يجب أن تكون متواجداً داخل رومك الصوتي المؤقت لاستخدام اللوحة!', ephemeral: true });
+            }
 
-        // الأزرار العامة للروم
-        if (['btn_lock', 'btn_unlock', 'btn_hide', 'btn_show'].includes(customId)) {
-            await interaction.deferReply({ ephemeral: true }).catch(() => {});
-            switch (customId) {
-                case 'btn_lock':
-                    await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { Connect: false });
-                    return interaction.editReply({ content: '🔒 تم قفل الروم.' });
-                case 'btn_unlock':
-                    await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { Connect: true });
-                    return interaction.editReply({ content: '🔓 تم فتح الروم.' });
-                case 'btn_hide':
-                    await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: false });
-                    return interaction.editReply({ content: '👁️‍🗨️ تم إخفاء الروم.' });
-                case 'btn_show':
-                    await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: true });
-                    return interaction.editReply({ content: '👁️ تم إظهار الروم.' });
+            const roomOwnerId = tempVoiceChannels.get(userVoiceChannel.id);
+            if (interaction.user.id !== roomOwnerId) {
+                return interaction.reply({ content: '❌ أنت لست صاحب هذا الروم الصوتي المؤقت!', ephemeral: true });
             }
         }
 
-        // الأزرار التي تتطلب تحديد عضو مسبقاً من القائمة
-        const targetId = selectedTargets.get(interaction.user.id);
-        if (!targetId) {
-            return interaction.reply({ content: '⚠️ يرجى تحديد العضو أولاً من قائمة (اختيار العضو) السفلية!', ephemeral: true });
+        const voiceChannel = userVoiceChannel;
+        const logChannel = interaction.guild.channels.cache.get(process.env.LOG_CHANNEL_ID);
+
+        if (interaction.isUserSelectMenu()) {
+            if (interaction.customId === 'select_target_user') {
+                const targetId = interaction.values[0];
+                selectedTargets.set(interaction.user.id, targetId);
+                const targetMember = await interaction.guild.members.fetch(targetId).catch(() => null);
+                const name = targetMember ? targetMember.displayName : targetId;
+                return interaction.reply({ content: `✅ تم تحديد العضو: **${name}**. يمكنك الآن الضغط على الأزرار المطلوبة.`, ephemeral: true });
+            }
         }
 
-        await interaction.deferReply({ ephemeral: true }).catch(() => {});
-        const targetMember = await interaction.guild.members.fetch(targetId).catch(() => null);
-        if (!targetMember) {
-            return interaction.editReply({ content: '❌ تعذر العثور على العضو المختار.' });
+        if (interaction.isButton()) {
+            const customId = interaction.customId;
+
+            if (customId === 'btn_rename') {
+                const modal = new ModalBuilder().setCustomId('modal_rename').setTitle('تغيير اسم الروم');
+                const input = new TextInputBuilder().setCustomId('input_name').setLabel('الاسم الجديد').setStyle(TextInputStyle.Short).setRequired(true);
+                modal.addComponents(new ActionRowBuilder().addComponents(input));
+                return interaction.showModal(modal);
+            }
+
+            if (customId === 'btn_limit') {
+                const modal = new ModalBuilder().setCustomId('modal_limit').setTitle('تحديد عدد الأعضاء');
+                const input = new TextInputBuilder().setCustomId('input_limit').setLabel('العدد (0 للمفتوح)').setStyle(TextInputStyle.Short).setRequired(true);
+                modal.addComponents(new ActionRowBuilder().addComponents(input));
+                return interaction.showModal(modal);
+            }
+
+            if (customId === 'btn_delete') {
+                await interaction.reply({ content: '🗑️ جاري حذف الروم...', ephemeral: true });
+                tempVoiceChannels.delete(voiceChannel.id);
+                selectedTargets.delete(interaction.user.id);
+                return voiceChannel.delete().catch(() => {});
+            }
+
+            if (['btn_lock', 'btn_unlock', 'btn_hide', 'btn_show'].includes(customId)) {
+                await interaction.deferReply({ ephemeral: true }).catch(() => {});
+                switch (customId) {
+                    case 'btn_lock':
+                        await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { Connect: false });
+                        return interaction.editReply({ content: '🔒 تم قفل الروم.' });
+                    case 'btn_unlock':
+                        await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { Connect: true });
+                        return interaction.editReply({ content: '🔓 تم فتح الروم.' });
+                    case 'btn_hide':
+                        await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: false });
+                        return interaction.editReply({ content: '👁️‍🗨️ تم إخفاء الروم.' });
+                    case 'btn_show':
+                        await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: true });
+                        return interaction.editReply({ content: '👁️ تم إظهار الروم.' });
+                }
+            }
+
+            const targetId = selectedTargets.get(interaction.user.id);
+            if (!targetId) {
+                return interaction.reply({ content: '⚠️ يرجى تحديد العضو أولاً من قائمة (اختيار العضو) السفلية!', ephemeral: true });
+            }
+
+            await interaction.deferReply({ ephemeral: true }).catch(() => {});
+            const targetMember = await interaction.guild.members.fetch(targetId).catch(() => null);
+            if (!targetMember) {
+                return interaction.editReply({ content: '❌ تعذر العثور على العضو المختار.' });
+            }
+
+            switch (customId) {
+                case 'btn_allow_admin':
+                    await voiceChannel.permissionOverwrites.edit(targetId, { 
+                        Connect: true, 
+                        ViewChannel: true, 
+                        MuteMembers: true, 
+                        DeafenMembers: true, 
+                        MoveMembers: true 
+                    });
+                    
+                    if (logChannel) {
+                        logChannel.send({
+                            embeds: [{
+                                color: 0x3b82f6,
+                                title: '👑 Admin Permission Granted',
+                                description: `**Room Owner:** <@${interaction.user.id}>\n**Target Member:** <@${targetId}>\n**Channel:** \`${voiceChannel.name}\``,
+                                timestamp: new Date().toISOString()
+                            }]
+                        }).catch(() => {});
+                    }
+
+                    return interaction.editReply({ content: `👑 تم إعطاء "سماح إداري" للعضو <@${targetId}> بنجاح.` });
+
+                case 'btn_remove_admin':
+                    await voiceChannel.permissionOverwrites.edit(targetId, { 
+                        MuteMembers: false, 
+                        DeafenMembers: false, 
+                        MoveMembers: false 
+                    });
+
+                    if (logChannel) {
+                        logChannel.send({
+                            embeds: [{
+                                color: 0x6b7280,
+                                title: '➖ Admin Permission Removed',
+                                description: `**Room Owner:** <@${interaction.user.id}>\n**Target Member:** <@${targetId}>\n**Channel:** \`${voiceChannel.name}\``,
+                                timestamp: new Date().toISOString()
+                            }]
+                        }).catch(() => {});
+                    }
+
+                    return interaction.editReply({ content: `➖ تم إزالة الصلاحيات الإدارية عن العضو <@${targetId}>.` });
+
+                case 'btn_mute':
+                    // إعطاء ميوت صوتي داخل الروم فقط (منع التكلم)
+                    await targetMember.voice.setMute(true).catch(() => {});
+                    return interaction.editReply({ content: `🔇 تم إعطاء ميوت صوتي للعضو <@${targetId}>.` });
+
+                case 'btn_unmute':
+                    // فك الميوت الصوتي
+                    await targetMember.voice.setMute(false).catch(() => {});
+                    return interaction.editReply({ content: `🔊 تم فك الميوت الصوتي عن العضو <@${targetId}>.` });
+
+                case 'btn_kick':
+                    // طرد العضو من الروم فقط دون منعه من الدخول مرة أخرى
+                    if (targetMember.voice && targetMember.voice.channelId === voiceChannel.id) {
+                        await targetMember.voice.disconnect().catch(() => {});
+                    }
+                    return interaction.editReply({ content: `👢 تم طرد العضو <@${targetId}> من الروم.` });
+
+                case 'btn_ban':
+                    // منع دخول العضو للروم (وحظره إذا كان داخله)
+                    await voiceChannel.permissionOverwrites.edit(targetId, { Connect: false });
+                    if (targetMember.voice && targetMember.voice.channelId === voiceChannel.id) {
+                        await targetMember.voice.disconnect().catch(() => {});
+                    }
+                    return interaction.editReply({ content: `🚫 تم منع العضو <@${targetId}> من دخول الروم.` });
+
+                case 'btn_unban':
+                    // فك منع دخول الروم
+                    await voiceChannel.permissionOverwrites.delete(targetId).catch(() => {});
+                    return interaction.editReply({ content: `🔓 تم السماح للعضو <@${targetId}> بدخول الروم مجدداً.` });
+            }
         }
 
-        switch (customId) {
-            case 'btn_allow_admin': // سماح إداري
-                await voiceChannel.permissionOverwrites.edit(targetId, { 
-                    Connect: true, 
-                    ViewChannel: true, 
-                    MuteMembers: true, 
-                    DeafenMembers: true, 
-                    MoveMembers: true 
-                });
-                
-                if (logChannel) {
-                    logChannel.send({
-                        embeds: [{
-                            color: 0x3b82f6,
-                            title: '👑 Admin Permission Granted',
-                            description: `**Room Owner:** <@${interaction.user.id}>\n**Target Member:** <@${targetId}>\n**Channel:** \`${voiceChannel.name}\``,
-                            timestamp: new Date().toISOString()
-                        }]
-                    }).catch(() => {});
-                }
-
-                await interaction.editReply({ content: `👑 تم إعطاء "سماح إداري" (ميوت، دفن، طرد) للعضو <@${targetId}> بنجاح.` });
-                break;
-
-            case 'btn_remove_admin': // إزالة إداري
-                await voiceChannel.permissionOverwrites.edit(targetId, { 
-                    MuteMembers: false, 
-                    DeafenMembers: false, 
-                    MoveMembers: false 
-                });
-
-                if (logChannel) {
-                    logChannel.send({
-                        embeds: [{
-                            color: 0x6b7280,
-                            title: '➖ Admin Permission Removed',
-                            description: `**Room Owner:** <@${interaction.user.id}>\n**Target Member:** <@${targetId}>\n**Channel:** \`${voiceChannel.name}\``,
-                            timestamp: new Date().toISOString()
-                        }]
-                    }).catch(() => {});
-                }
-
-                await interaction.editReply({ content: `➖ تم إزالة الصلاحيات الإدارية (الطرد، الدفن، الميوت) عن العضو <@${targetId}>.` });
-                break;
-
-            case 'btn_mute': // ميوت / طرد / دفن
-                await voiceChannel.permissionOverwrites.edit(targetId, { Connect: false });
-                if (targetMember.voice.channelId === voiceChannel.id) await targetMember.voice.disconnect();
-
-                if (logChannel) {
-                    logChannel.send({
-                        embeds: [{
-                            color: 0xff3b30,
-                            title: '👢 Voice Kick / Mute (دفن/طرد)',
-                            description: `**Room Owner:** <@${interaction.user.id}>\n**Kicked/Muted Member:** <@${targetId}>\n**Channel:** \`${voiceChannel.name}\``,
-                            timestamp: new Date().toISOString()
-                        }]
-                    }).catch(() => {});
-                }
-
-                await interaction.editReply({ content: `🔇 تم عمل ميوت/منع/طرد للعضو <@${targetId}>.` });
-                break;
-
-            case 'btn_unmute': // فك الميوت / الحظر
-                await voiceChannel.permissionOverwrites.delete(targetId);
-
-                if (logChannel) {
-                    logChannel.send({
-                        embeds: [{
-                            color: 0x00ff87,
-                            title: '🔓 Unmute / Unban (فك)',
-                            description: `**Room Owner:** <@${interaction.user.id}>\n**Target Member:** <@${targetId}>\n**Channel:** \`${voiceChannel.name}\``,
-                            timestamp: new Date().toISOString()
-                        }]
-                    }).catch(() => {});
-                }
-
-                await interaction.editReply({ content: `🔓 تم فك الميوت والحظر عن العضو <@${targetId}>.` });
-                break;
+        if (interaction.isModalSubmit()) {
+            await interaction.deferReply({ ephemeral: true }).catch(() => {});
+            if (interaction.customId === 'modal_rename') {
+                const name = interaction.fields.getTextInputValue('input_name');
+                await voiceChannel.setName(name).catch(() => {});
+                return interaction.editReply({ content: `✏️ تم تغيير اسم الروم إلى: **${name}**` });
+            }
+            if (interaction.customId === 'modal_limit') {
+                const limit = parseInt(interaction.fields.getTextInputValue('input_limit'));
+                if (isNaN(limit) || limit < 0 || limit > 99) return interaction.editReply({ content: '❌ يرجى إدخال رقم صحيح بين 0 و 99.' });
+                await voiceChannel.setUserLimit(limit).catch(() => {});
+                return interaction.editReply({ content: `👥 تم تغيير حد الأعضاء إلى: **${limit}**` });
+            }
         }
+    } catch (err) {
+        console.error('Interaction Error:', err);
     }
+});
 
-    if (interaction.isModalSubmit()) {
-        await interaction.deferReply({ ephemeral: true }).catch(() => {});
-        if (interaction.customId === 'modal_rename') {
-            const name = interaction.fields.getTextInputValue('input_name');
-            await voiceChannel.setName(name).catch(() => {});
-            await interaction.editReply({ content: `✏️ تم تغيير اسم الروم إلى: **${name}**` });
-        }
-        if (interaction.customId === 'modal_limit') {
-            const limit = parseInt(interaction.fields.getTextInputValue('input_limit'));
-            if (isNaN(limit) || limit < 0 || limit > 99) return interaction.editReply({ content: '❌ يرجى إدخال رقم صحيح بين 0 و 99.' });
-            await voiceChannel.setUserLimit(limit).catch(() => {});
-            await interaction.editReply({ content: `👥 تم تغيير حد الأعضاء إلى: **${limit}**` });
-        }
-    }
+process.on('unhandledRejection', error => {
+    console.error('Unhandled promise rejection:', error);
+});
+
+process.on('uncaughtException', error => {
+    console.error('Uncaught exception:', error);
 });
 
 const express = require('express');
