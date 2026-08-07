@@ -17,47 +17,7 @@ const client = new Client({
 
 const tempVoiceChannels = new Map();
 
-function getControlUI(member) {
-    const embed = new EmbedBuilder()
-        .setColor(0x3b82f6)
-        .setTitle('لوحة تحكم الروم الصوتي المؤقت')
-        .setDescription('استخدم الأزرار أدناه للتحكم في قناتك الصوتية:')
-        .setFooter({ text: `أنشأ بواسطة ${member.displayName}`, iconURL: member.user.displayAvatarURL() });
-
-    const row1 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('lock_room').setLabel('قفل').setStyle(ButtonStyle.Secondary).setEmoji('🔒'),
-        new ButtonBuilder().setCustomId('unlock_room').setLabel('افتح').setStyle(ButtonStyle.Secondary).setEmoji('🔓'),
-        new ButtonBuilder().setCustomId('unhide_room').setLabel('إظهار').setStyle(ButtonStyle.Secondary).setEmoji('👁️'),
-        new ButtonBuilder().setCustomId('hide_room').setLabel('إخفاء').setStyle(ButtonStyle.Secondary).setEmoji('🔒')
-    );
-
-    const row2 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('kick_user').setLabel('طرد').setStyle(ButtonStyle.Secondary).setEmoji('👢'),
-        new ButtonBuilder().setCustomId('ban_user').setLabel('حظر').setStyle(ButtonStyle.Secondary).setEmoji('👤'),
-        new ButtonBuilder().setCustomId('unban_user').setLabel('إلغاء الحظر').setStyle(ButtonStyle.Secondary).setEmoji('👤'),
-        new ButtonBuilder().setCustomId('invite_user').setLabel('دعوة').setStyle(ButtonStyle.Secondary).setEmoji('✉️')
-    );
-
-    const row3 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('rename_room').setLabel('تغيير الاسم').setStyle(ButtonStyle.Secondary).setEmoji('✏️'),
-        new ButtonBuilder().setCustomId('limit_room').setLabel('الحد الأقصى').setStyle(ButtonStyle.Secondary).setEmoji('⏱️'),
-        new ButtonBuilder().setCustomId('region_room').setLabel('الريجن').setStyle(ButtonStyle.Secondary).setEmoji('🌍'),
-        new ButtonBuilder().setCustomId('bot_admin').setLabel('صلاحيات').setStyle(ButtonStyle.Secondary)
-    );
-
-    const row4 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('allow_user').setLabel('سماح').setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId('deny_user').setLabel('إلغاء السماح').setStyle(ButtonStyle.Danger)
-    );
-
-    return {
-        content: `<@${member.id}>`,
-        embeds: [embed],
-        components: [row1, row2, row3, row4]
-    };
-}
-
-client.once('ready', () => {
+client.on('ready', () => {
     console.log(`Bot logged in as ${client.user.tag}`);
 });
 
@@ -74,42 +34,34 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
                 parent: process.env.CATEGORY_ID,
                 permissionOverwrites: [
                     { id: guild.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] },
-                    { 
-                        id: member.id, 
-                        allow: [
-                            PermissionFlagsBits.ViewChannel, 
-                            PermissionFlagsBits.Connect, 
-                            PermissionFlagsBits.ManageChannels, 
-                            PermissionFlagsBits.SendMessages, 
-                            PermissionFlagsBits.ReadMessageHistory
-                        ] 
-                    },
-                    { 
-                        id: client.user.id, 
-                        allow: [
-                            PermissionFlagsBits.ViewChannel, 
-                            PermissionFlagsBits.Connect, 
-                            PermissionFlagsBits.ManageChannels, 
-                            PermissionFlagsBits.SendMessages, 
-                            PermissionFlagsBits.ReadMessageHistory
-                        ] 
-                    }
+                    { id: member.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.SendMessages] },
+                    { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.SendMessages] }
                 ]
             });
 
             tempVoiceChannels.set(voiceChannel.id, member.id);
             await member.voice.setChannel(voiceChannel);
 
+            const embed = new EmbedBuilder()
+                .setColor(0x3b82f6)
+                .setTitle('لوحة التحكم')
+                .setDescription('تحكم برومك الصوتي من هنا');
+
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('lock_room').setLabel('قفل').setStyle(ButtonStyle.Secondary).setEmoji('🔒'),
+                new ButtonBuilder().setCustomId('unlock_room').setLabel('افتح').setStyle(ButtonStyle.Secondary).setEmoji('🔓')
+            );
+
             setTimeout(async () => {
                 try {
-                    await voiceChannel.send(getControlUI(member));
-                } catch (err) {
-                    console.error("فشل إرسال الرسالة داخل الشات الصوتي:", err);
+                    await voiceChannel.send({ embeds: [embed], components: [row] });
+                } catch (e) {
+                    console.log("ديسكورد يرفض إرسال رسالة في شات الصوت المؤقت:", e.message);
                 }
-            }, 1500);
+            }, 2000);
 
         } catch (err) {
-            console.error("خطأ أثناء إنشاء الروم الصوتي:", err);
+            console.error(err);
         }
     }
 
