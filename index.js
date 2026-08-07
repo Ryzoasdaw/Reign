@@ -65,38 +65,48 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     const member = newState.member;
     if (!member || member.user.bot) return;
 
-    // 1. عند دخول العضو روم الإنشاء
+    // 1. عند دخول روم الإنشاء
     if (newState.channelId === process.env.JOIN_CHANNEL_ID) {
         try {
-            // إنشاء الروم الصوتي
+            // إنشاء روم صوتي مع صلاحيات كاملة للبوت والعضو
             const voiceChannel = await guild.channels.create({
                 name: `🔊 | ${member.displayName}`,
                 type: ChannelType.GuildVoice,
                 parent: process.env.CATEGORY_ID,
                 permissionOverwrites: [
-                    { id: guild.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] },
-                    { id: member.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.SendMessages] }
+                    {
+                        id: guild.id,
+                        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect]
+                    },
+                    {
+                        id: member.id,
+                        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.SendMessages]
+                    },
+                    {
+                        id: client.user.id,
+                        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.SendMessages]
+                    }
                 ]
             });
 
             tempVoiceChannels.set(voiceChannel.id, member.id);
             await member.voice.setChannel(voiceChannel);
 
-            // إرسال اللوحة مباشرة داخل شات القناة الصوتية بعد التأكد من جاهزيتها
+            // إرسال اللوحة والأزرار داخل الشات الخاص بالقناة
             setTimeout(async () => {
                 try {
                     await voiceChannel.send(buildTempRoomControlUI(member));
                 } catch (err) {
-                    console.error("خطأ في إرسال لوحة التحكم:", err);
+                    console.error("خطأ في إرسال اللوحة:", err);
                 }
             }, 1500);
 
         } catch (error) {
-            console.error("خطأ أثناء إنشاء الروم الصوتي:", error);
+            console.error("خطأ أثناء إنشاء الروم:", error);
         }
     }
 
-    // 2. عند خروج الجميع وحذف الروم
+    // 2. حذف الروم إذا أصبح فارغاً
     if (oldState.channelId && tempVoiceChannels.has(oldState.channelId)) {
         const voiceChannel = oldState.guild.channels.cache.get(oldState.channelId);
         if (voiceChannel && voiceChannel.members.size === 0) {
