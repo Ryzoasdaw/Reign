@@ -38,7 +38,6 @@ function getControlUI(member) {
         new ButtonBuilder().setCustomId('invite_user').setLabel('دعوة').setStyle(ButtonStyle.Secondary).setEmoji('✉️')
     );
 
-    // تم إزالة زر "صلاحيات" واستبداله ليصبح التحكم عبر أزرار السماح
     const row3 = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('rename_room').setLabel('تغيير الاسم').setStyle(ButtonStyle.Secondary).setEmoji('✏️'),
         new ButtonBuilder().setCustomId('limit_room').setLabel('الحد الأقصى').setStyle(ButtonStyle.Secondary).setEmoji('⏱️'),
@@ -120,6 +119,14 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
             await voiceChannel.delete().catch(() => {});
         }
     }
+});
+
+// معالجة ضغطات الأزرار لتجنب خطأ الوقت
+client.on('interactionCreate', async interaction => {
+    if (!interaction.isButton()) return;
+
+    // الرد الفوري لمنع ظهور خطأ "The application didn't respond in time"
+    await interaction.reply({ content: `تم استلام طلبك للزر: **${interaction.customId}** وسيتم برمجته لتنفيذ الأمر قريباً!`, ephemeral: true });
 });
 
 client.login(process.env.TOKEN);
