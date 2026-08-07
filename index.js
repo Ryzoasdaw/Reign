@@ -303,25 +303,23 @@ client.on('interactionCreate', async interaction => {
             return interaction.reply({ content: '❌ لم يتم العثور على الروم الصوتي.', ephemeral: true });
         }
 
-        await interaction.deferReply({ ephemeral: true });
-
         if (interaction.customId === 'modal_limit') {
             const limitVal = parseInt(interaction.fields.getTextInputValue('limit_input'));
             if (isNaN(limitVal) || limitVal < 0 || limitVal > 99) {
-                return interaction.editReply({ content: '❌ أدخل رقم صحيح بين 0 و 99!' });
+                return interaction.reply({ content: '❌ أدخل رقم صحيح بين 0 و 99!', ephemeral: true });
             }
             await voiceChannel.setUserLimit(limitVal);
-            return interaction.editReply({ content: `⏱️ تم تعديل الحد الأقصى للأعضاء إلى: **${limitVal}**` });
+            return interaction.reply({ content: `⏱️ تم تعديل الحد الأقصى للأعضاء إلى: **${limitVal}**`, ephemeral: true });
         }
         else if (interaction.customId === 'modal_rename') {
             const newName = interaction.fields.getTextInputValue('rename_input');
             await voiceChannel.setName(newName);
-            return interaction.editReply({ content: `✏️ تم تغيير اسم الروم إلى: **${newName}**` });
+            return interaction.reply({ content: `✏️ تم تغيير اسم الروم إلى: **${newName}**`, ephemeral: true });
         }
         else if (interaction.customId === 'modal_region') {
             const regionVal = interaction.fields.getTextInputValue('region_input');
             await voiceChannel.setRTCRegion(regionVal ? regionVal.toLowerCase() : null);
-            return interaction.editReply({ content: `🌍 تم تحديث ريجن الروم بنجاح.` });
+            return interaction.reply({ content: `🌍 تم تحديث ريجن الروم بنجاح.`, ephemeral: true });
         }
     }
 });
