@@ -1,17 +1,11 @@
 const { Client, GatewayIntentBits, ChannelType, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const express = require('express');
 
-// إعداد سيرفر Express عشان Render
+// إعداد سيرفر Express
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-app.get('/', (req, res) => {
-  res.send('Bot is active and running!');
-});
-
-app.listen(PORT, () => {
-  console.log(`Express server is listening on port ${PORT}`);
-});
+app.get('/', (req, res) => res.send('Bot is active!'));
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
 const client = new Client({
     intents: [
@@ -63,11 +57,11 @@ function buildTempRoomControlUI(member) {
 client.once('ready', () => console.log(`Logged in as ${client.user.tag}!`));
 
 client.on('voiceStateUpdate', async (oldState, newState) => {
-    const guild = newState.guild || oldState.guild;
-    const member = newState.member || oldState.member;
+    const guild = newState.guild;
+    const member = newState.member;
     if (!member || member.user.bot) return;
 
-    // عند دخول روم الصناعة
+    // إنشاء الروم
     if (newState.channelId === process.env.JOIN_CHANNEL_ID) {
         try {
             const channel = await guild.channels.create({
@@ -75,53 +69,27 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
                 type: ChannelType.GuildVoice,
                 parent: process.env.CATEGORY_ID,
                 permissionOverwrites: [
-                    {
-                        id: guild.id,
-                        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect],
-                    },
-                    {
-                        id: member.id,
-                        allow: [
-                            PermissionFlagsBits.ViewChannel, 
-                            PermissionFlagsBits.Connect, 
-                            PermissionFlagsBits.ManageChannels, 
-                            PermissionFlagsBits.SendMessages,
-                            PermissionFlagsBits.ReadMessageHistory
-                        ],
-                    },
-                    {
-                        id: client.user.id,
-                        allow: [
-                            PermissionFlagsBits.ViewChannel, 
-                            PermissionFlagsBits.Connect, 
-                            PermissionFlagsBits.ManageChannels, 
-                            PermissionFlagsBits.SendMessages,
-                            PermissionFlagsBits.ReadMessageHistory
-                        ],
-                    }
+                    { id: guild.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] },
+                    { id: member.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] }
                 ]
             });
 
             tempVoiceChannels.set(channel.id, member.id);
             await member.voice.setChannel(channel);
 
-            // إرسال اللوحة بعد التأكد من جاهزية الروم بالكامل
+            // إرسال اللوحة بعد التأكد من إنشاء القناة
             setTimeout(async () => {
-                try {
-                    await channel.send(buildTempRoomControlUI(member));
-                } catch (err) {
-                    console.error("خطأ في إرسال اللوحة داخل الروم الصوتي:", err);
-                }
-            }, 1500);
+                await channel.send(buildTempRoomControlUI(member)).catch(console.error);
+            }, 2000);
 
         } catch (error) {
-            console.error("خطأ أثناء إنشاء الروم الصوتي:", error);
+            console.error("خطأ أثناء إنشاء الروم:", error);
         }
     }
 
-    // حذف الروم إذا كان فارغاً
+    // حذف الروم
     if (oldState.channelId && tempVoiceChannels.has(oldState.channelId)) {
-        const channel = guild.channels.cache.get(oldState.channelId);
+        const channel = oldState.guild.channels.cache.get(oldState.channelId);
         if (channel && channel.members.size === 0) {
             tempVoiceChannels.delete(channel.id);
             await channel.delete().catch(() => {});
