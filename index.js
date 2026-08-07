@@ -164,6 +164,33 @@ client.on('interactionCreate', async interaction => {
             const row = new ActionRowBuilder().addComponents(selectMenu);
             return interaction.reply({ content: 'اختر العضو المراد طرده من القائمة أدناه:', components: [row], ephemeral: true });
         }
+        else if (interaction.customId === 'ban_user') {
+            const selectMenu = new UserSelectMenuBuilder()
+                .setCustomId('select_ban')
+                .setPlaceholder('اختر العضو لحظره من الروم')
+                .setMinValues(1)
+                .setMaxValues(1);
+            const row = new ActionRowBuilder().addComponents(selectMenu);
+            return interaction.reply({ content: 'اختر العضو لحظره من القائمة أدناه:', components: [row], ephemeral: true });
+        }
+        else if (interaction.customId === 'unban_user') {
+            const selectMenu = new UserSelectMenuBuilder()
+                .setCustomId('select_unban')
+                .setPlaceholder('اختر العضو لفك الحظر عنه')
+                .setMinValues(1)
+                .setMaxValues(1);
+            const row = new ActionRowBuilder().addComponents(selectMenu);
+            return interaction.reply({ content: 'اختر العضو لفك الحظر عنه من القائمة أدناه:', components: [row], ephemeral: true });
+        }
+        else if (interaction.customId === 'invite_user') {
+            const selectMenu = new UserSelectMenuBuilder()
+                .setCustomId('select_invite')
+                .setPlaceholder('اختر العضو لدعوته إلى الروم')
+                .setMinValues(1)
+                .setMaxValues(1);
+            const row = new ActionRowBuilder().addComponents(selectMenu);
+            return interaction.reply({ content: 'اختر العضو لدعوته من القائمة أدناه:', components: [row], ephemeral: true });
+        }
         else if (interaction.customId === 'allow_user') {
             const selectMenu = new UserSelectMenuBuilder()
                 .setCustomId('select_allow')
@@ -194,8 +221,14 @@ client.on('interactionCreate', async interaction => {
             modal.addComponents(new ActionRowBuilder().addComponents(input));
             return interaction.showModal(modal);
         }
+        else if (interaction.customId === 'region_room') {
+            const modal = new ModalBuilder().setCustomId('modal_region').setTitle('تغيير ريجن الروم');
+            const input = new TextInputBuilder().setCustomId('region_input').setLabel('أدخل الريجن (مثال: us-central, brazil.. أو ترك):').setStyle(TextInputStyle.Short).setRequired(false);
+            modal.addComponents(new ActionRowBuilder().addComponents(input));
+            return interaction.showModal(modal);
+        }
         else {
-            return interaction.reply({ content: `✅ تم تنفيذ أمر الزر (${interaction.customId}) بنجاح!`, ephemeral: true });
+            return interaction.reply({ content: `✅ تم تنفيذ أمر الزر بنجاح!`, ephemeral: true });
         }
     }
 
@@ -216,6 +249,32 @@ client.on('interactionCreate', async interaction => {
                     await interaction.update({ content: '❌ العضو ليس موجوداً في رومك الصوتي حالياً!', components: [] });
                 }
             } 
+            else if (interaction.customId === 'select_ban') {
+                await voiceChannel.permissionOverwrites.edit(targetId, { Connect: false, ViewChannel: false });
+                const targetMember = await interaction.guild.members.fetch(targetId).catch(() => null);
+                if (targetMember && targetMember.voice.channelId === voiceChannel.id) {
+                    await targetMember.voice.disconnect().catch(() => {});
+                }
+                await interaction.update({ content: `👤 تم حظر العضو <@${targetId}> من الروم وإخفائه عنه.`, components: [] });
+            }
+            else if (interaction.customId === 'select_unban') {
+                await voiceChannel.permissionOverwrites.delete(targetId).catch(() => {});
+                await interaction.update({ content: `👤 تم فك الحظر عن العضو <@${targetId}> وإرجاع وضعه الطبيعي.`, components: [] });
+            }
+            else if (interaction.customId === 'select_invite') {
+                const targetUser = await client.users.fetch(targetId).catch(() => null);
+                if (targetUser) {
+                    const invite = await voiceChannel.createInvite({ maxUses: 1, maxAge: 300 }).catch(() => null);
+                    if (invite) {
+                        await targetUser.send(`لقد تلقيت دعوة للانضمام إلى روم <#${voiceChannel.id}> الصوتي:\nhttps://discord.gg/${invite.code}`).catch(() => {});
+                        await interaction.update({ content: `✉️ تم إرسال دعوة خاصة في الخاص للعضو <@${targetId}>.`, components: [] });
+                    } else {
+                        await interaction.update({ content: '❌ لم أستطع إنشاء دعوة لهذا الروم.', components: [] });
+                    }
+                } else {
+                    await interaction.update({ content: '❌ لم أتمكن من العثور على هذا المستخدم.', components: [] });
+                }
+            }
             else if (interaction.customId === 'select_allow') {
                 await voiceChannel.permissionOverwrites.edit(targetId, { 
                     Connect: true, 
@@ -256,6 +315,11 @@ client.on('interactionCreate', async interaction => {
             const newName = interaction.fields.getTextInputValue('rename_input');
             await voiceChannel.setName(newName);
             return interaction.reply({ content: `✏️ تم تغيير اسم الروم إلى: **${newName}**`, ephemeral: true });
+        }
+        else if (interaction.customId === 'modal_region') {
+            const regionVal = interaction.fields.getTextInputValue('region_input');
+            await voiceChannel.setRTCRegion(regionVal ? regionVal.toLowerCase() : null);
+            return interaction.reply({ content: `🌍 تم تحديث ريجن الروم بنجاح.`, ephemeral: true });
         }
     }
 });
