@@ -55,35 +55,39 @@ client.once('ready', async () => {
 });
 
 function buildTempRoomControlUI(memberMention) {
-    const content = `أهلاً بك في رومك المؤقت، ${memberMention} استخدم الأزرار والقائمة أدناه للتحكم:`;
+    const content = `**للتحكم في الروم الخاص بك الصوتى المؤقت**\nالمزيد من الخيارات متاحة من خلال هذه الأزرار\n\nتم إنشاء الروم بواسطة ${memberMention}`;
 
+    // الصف الأول: إخفاء، إظهار، افتح، قفل
     const row1 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('btn_lock').setLabel('قفل').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('btn_unlock').setLabel('فتح').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('btn_hide').setLabel('إخفاء').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('btn_show').setLabel('إظهار').setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder().setCustomId('btn_hide').setLabel('إخفاء').setStyle(ButtonStyle.Secondary).setEmoji('👁️‍🗨️'),
+        new ButtonBuilder().setCustomId('btn_show').setLabel('إظهار').setStyle(ButtonStyle.Secondary).setEmoji('👁️'),
+        new ButtonBuilder().setCustomId('btn_unlock').setLabel('افتح').setStyle(ButtonStyle.Secondary).setEmoji('🔓'),
+        new ButtonBuilder().setCustomId('btn_lock').setLabel('قفل').setStyle(ButtonStyle.Secondary).setEmoji('🔒')
     );
 
+    // الصف الثاني: دعوة، إلغاء الحظر، حظر، طرد
     const row2 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('btn_allow_admin').setLabel('سماح إداري').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('btn_remove_admin').setLabel('إزالة إداري').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('btn_limit').setLabel('حد').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('btn_invite').setLabel('دعوة').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('btn_unban').setLabel('إلغاء الحظر').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('btn_ban').setLabel('حظر').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('btn_kick').setLabel('طرد').setStyle(ButtonStyle.Secondary).setEmoji('👢')
+    );
+
+    // الصف الثالث: بوت اغاني، ريجين الروم، حد الأعضاء، الاسم
+    const row3 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('btn_music').setLabel('بوت اغاني').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('btn_region').setLabel('ريجين الروم').setStyle(ButtonStyle.Secondary).setEmoji('🌐'),
+        new ButtonBuilder().setCustomId('btn_limit').setLabel('حد الأعضاء').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId('btn_rename').setLabel('الاسم').setStyle(ButtonStyle.Secondary)
     );
 
-    // الأزرار مفصولة تماماً: ميوت سيرفر، فك ميوت، طرد، منع دخول، فك منع
-    const row3 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('btn_mute').setLabel('ميوت').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('btn_unmute').setLabel('فك ميوت').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('btn_kick').setLabel('طرد').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('btn_ban').setLabel('منع دخول').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('btn_unban').setLabel('فك منع').setStyle(ButtonStyle.Secondary)
-    );
-
+    // الصف الرابع: سماح (أخضر)، إلغاء السماح (أحمر)
     const row4 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('btn_delete').setLabel('حذف الروم').setStyle(ButtonStyle.Danger)
+        new ButtonBuilder().setCustomId('btn_allow_admin').setLabel('سماح').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('btn_remove_admin').setLabel('إلغاء السماح').setStyle(ButtonStyle.Danger)
     );
 
+    // قائمة اختيار العضو السفلية
     const userSelect = new ActionRowBuilder().addComponents(
         new UserSelectMenuBuilder()
             .setCustomId('select_target_user')
@@ -447,11 +451,16 @@ client.on('interactionCreate', async (interaction) => {
                 return interaction.showModal(modal);
             }
 
-            if (customId === 'btn_delete') {
-                await interaction.reply({ content: '🗑️ جاري حذف الروم...', ephemeral: true });
-                tempVoiceChannels.delete(voiceChannel.id);
-                selectedTargets.delete(interaction.user.id);
-                return voiceChannel.delete().catch(() => {});
+            if (customId === 'btn_music') {
+                return interaction.reply({ content: '🎵 ميزة بوت الأغاني غير مرتبطة بعد.', ephemeral: true });
+            }
+
+            if (customId === 'btn_region') {
+                return interaction.reply({ content: '🌐 ميزة ريجين الروم غير مفعلة حالياً.', ephemeral: true });
+            }
+
+            if (customId === 'btn_invite') {
+                return interaction.reply({ content: '📩 تم طلب الدعوة.', ephemeral: true });
             }
 
             if (['btn_lock', 'btn_unlock', 'btn_hide', 'btn_show'].includes(customId)) {
@@ -490,7 +499,8 @@ client.on('interactionCreate', async (interaction) => {
                         ViewChannel: true, 
                         MuteMembers: true, 
                         DeafenMembers: true, 
-                        MoveMembers: true 
+                        MoveMembers: true,
+                        ManageChannels: true
                     });
                     
                     if (logChannel) {
@@ -504,13 +514,14 @@ client.on('interactionCreate', async (interaction) => {
                         }).catch(() => {});
                     }
 
-                    return interaction.editReply({ content: `👑 تم إعطاء "سماح إداري" للعضو <@${targetId}> بنجاح.` });
+                    return interaction.editReply({ content: `✅ تم إعطاء صلاحية "سماح" (ميوت، دفن، وإدارة) للعضو <@${targetId}> بنجاح.` });
 
                 case 'btn_remove_admin':
                     await voiceChannel.permissionOverwrites.edit(targetId, { 
                         MuteMembers: false, 
                         DeafenMembers: false, 
-                        MoveMembers: false 
+                        MoveMembers: false,
+                        ManageChannels: false
                     });
 
                     if (logChannel) {
@@ -524,37 +535,24 @@ client.on('interactionCreate', async (interaction) => {
                         }).catch(() => {});
                     }
 
-                    return interaction.editReply({ content: `➖ تم إزالة الصلاحيات الإدارية عن العضو <@${targetId}>.` });
-
-                case 'btn_mute':
-                    // ميوت سيرفر (Server Mute) لمنع العضو من التكلم بشكل كامل
-                    await targetMember.voice.setMute(true).catch(() => {});
-                    return interaction.editReply({ content: `🔇 تم إعطاء ميوت سيرفر للعضو <@${targetId}>.` });
-
-                case 'btn_unmute':
-                    // فك ميوت السيرفر
-                    await targetMember.voice.setMute(false).catch(() => {});
-                    return interaction.editReply({ content: `🔊 تم فك الميوت عن العضو <@${targetId}>.` });
+                    return interaction.editReply({ content: `➖ تم إزالة "إلغاء السماح" عن العضو <@${targetId}>.` });
 
                 case 'btn_kick':
-                    // طرد العضو من الروم فقط دون منعه من الدخول مرة أخرى
                     if (targetMember.voice && targetMember.voice.channelId === voiceChannel.id) {
                         await targetMember.voice.disconnect().catch(() => {});
                     }
                     return interaction.editReply({ content: `👢 تم طرد العضو <@${targetId}> من الروم.` });
 
                 case 'btn_ban':
-                    // منع دخول العضو للروم (وإذا كان داخله يتم طرده)
                     await voiceChannel.permissionOverwrites.edit(targetId, { Connect: false });
                     if (targetMember.voice && targetMember.voice.channelId === voiceChannel.id) {
                         await targetMember.voice.disconnect().catch(() => {});
                     }
-                    return interaction.editReply({ content: `🚫 تم منع العضو <@${targetId}> من دخول الروم.` });
+                    return interaction.editReply({ content: `🚫 تم حظر العضو <@${targetId}> من دخول الروم.` });
 
                 case 'btn_unban':
-                    // فك منع دخول الروم
                     await voiceChannel.permissionOverwrites.delete(targetId).catch(() => {});
-                    return interaction.editReply({ content: `🔓 تم السماح للعضو <@${targetId}> بدخول الروم مجدداً.` });
+                    return interaction.editReply({ content: `🔓 تم إلغاء الحظر عن العضو <@${targetId}>.` });
             }
         }
 
