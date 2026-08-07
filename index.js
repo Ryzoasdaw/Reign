@@ -1,6 +1,5 @@
 const { Client, GatewayIntentBits, ChannelType, PermissionFlagsBits } = require('discord.js');
 
-// 1. إنشاء الـ client (هذا هو السطر الذي يمنع خطأ ReferenceError تماماً)
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -10,23 +9,16 @@ const client = new Client({
     ]
 });
 
-// 2. تعريف الخرائط (Maps) لحفظ بيانات النشاط والرومات المؤقتة
 const userVoiceActivity = new Map();
 const tempVoiceChannels = new Map();
 
-// 3. دالة بناء واجهة لوحة التحكم للروم المؤقت
 function buildTempRoomControlUI(userTag) {
-    return {
-        content: `مرحباً بك ${userTag} في رومك الصوتي الخاص. يمكنك التحكم بالروم عبر الأزرار أدناه:`
-        // يمكنك إضافة components (الأزرار) هنا حسب رغبتك
-    };
+    return { content: `مرحباً بك ${userTag}` };
 }
 
-// 4. الحدث الأساسي لإدارة الرومات الصوتية
 client.on('voiceStateUpdate', async (oldState, newState) => {
     const guild = newState.guild || oldState.guild;
     const member = newState.member || oldState.member;
-
     if (!member || member.user.bot) return;
 
     const userId = member.id;
@@ -63,32 +55,26 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
             tempVoiceChannels.set(tempVoiceChannel.id, member.id);
             await member.voice.setChannel(tempVoiceChannel).catch(() => {});
 
-            // تأخير بسيط لضمان جاهزية قناة الصوت للنصوص داخل ديسكورد ثم إرسال اللوحة
             setTimeout(async () => {
                 const welcomeData = buildTempRoomControlUI(`<@${member.id}>`);
-                await tempVoiceChannel.send(welcomeData).catch(err => console.error("خطأ في إرسال لوحة الروم:", err));
+                await tempVoiceChannel.send(welcomeData).catch(err => console.error(err));
             }, 500);
 
             if (logChannel) {
-                const categoryObj = parentCategory ? guild.channels.cache.get(parentCategory) : null;
-                const categoryName = categoryObj ? categoryObj.name : 'No Category';
-                
                 logChannel.send({
                     embeds: [{
                         color: 0x00ff87,
                         title: 'Create Temporary Channel',
                         fields: [
                             { name: 'Channel', value: `🔊 ${roomName}`, inline: true },
-                            { name: 'By', value: `<@${member.id}>`, inline: true },
-                            { name: 'In', value: `# ${categoryName}`, inline: true }
+                            { name: 'By', value: `<@${member.id}>`, inline: true }
                         ],
                         timestamp: new Date().toISOString()
                     }]
                 }).catch(() => {});
             }
-
         } catch (error) {
-            console.error('خطأ أثناء إنشاء الروم الصوتي:', error);
+            console.error(error);
         }
     }
 
@@ -101,5 +87,4 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     }
 });
 
-// 5. تسجيل الدخول باستخدام التوكن من المتغيرات البيئية
 client.login(process.env.TOKEN);
