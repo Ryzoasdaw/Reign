@@ -15,7 +15,7 @@ const client = new Client({
     ]
 });
 
-const tempChannels = new Map();
+const tempVoiceChannels = new Map();
 
 function getControlUI(member) {
     const embed = new EmbedBuilder()
@@ -66,51 +66,65 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     const member = newState.member;
     if (!member || member.user.bot) return;
 
+    // عند دخول روم الإنشاء
     if (newState.channelId === process.env.JOIN_CHANNEL_ID) {
         try {
+            // إنشاء الروم الصوتي مع صلاحيات تفعيل الشات الصوتي الداخلي
             const voiceChannel = await guild.channels.create({
                 name: `🔊 | ${member.displayName}`,
                 type: ChannelType.GuildVoice,
                 parent: process.env.CATEGORY_ID,
                 permissionOverwrites: [
                     { id: guild.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] },
-                    { id: member.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.ManageChannels] }
+                    { 
+                        id: member.id, 
+                        allow: [
+                            PermissionFlagsBits.ViewChannel, 
+                            PermissionFlagsBits.Connect, 
+                            PermissionFlagsBits.ManageChannels, 
+                            PermissionFlagsBits.SendMessages, 
+                            PermissionFlagsBits.ReadMessageHistory
+                        ] 
+                    },
+                    { 
+                        id: client.user.id, 
+                        allow: [
+                            PermissionFlagsBits.ViewChannel, 
+                            PermissionFlagsBits.Connect, 
+                            PermissionFlagsBits.ManageChannels, 
+                            PermissionFlagsBits.SendMessages, 
+                            PermissionFlagsBits.ReadMessageHistory
+                        ] 
+                    }
                 ]
             });
 
-            const textChannel = await guild.channels.create({
-                name: `text-${member.user.username}`,
-                type: ChannelType.GuildText,
-                parent: process.env.CATEGORY_ID,
-                permissionOverwrites: [
-                    { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
-                    { id: member.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
-                    { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageChannels] }
-                ]
-            });
+            tempVoiceChannels.set(voiceChannel.id, member.id);
 
-            tempChannels.set(voiceChannel.id, { userId: member.id, textChannelId: textChannel.id });
-
+            // نقل العضو للروم الصوتي
             await member.voice.setChannel(voiceChannel);
-            await textChannel.send(getControlUI(member));
+
+            // الانتظار قليلاً لضمان استقرار الروم ثم إرسال اللوحة بداخله مباشرة
+            setTimeout(async () => {
+                try {
+                    await voiceChannel.send(getControlUI(member));
+                } catch (err) {
+                    console.error("فشل إرسال اللوحة داخل شات الروم الصوتي:", err);
+                }
+            }, 1500);
 
         } catch (err) {
-            console.error("خطأ أثناء إنشاء الروم الصوتي أو النصي:", err);
+            console.error("خطأ أثناء إنشاء الروم الصوتي:", err);
         }
     }
 
-    if (oldState.channelId && tempChannels.has(oldState.channelId)) {
-        const data = tempChannels.get(oldState.channelId);
+    // عند خروج الجميع وحذف الروم الصوتي
+    if (oldState.channelId && tempVoiceChannels.has(oldState.channelId)) {
         const voiceChannel = oldState.guild.channels.cache.get(oldState.channelId);
 
         if (voiceChannel && voiceChannel.members.size === 0) {
-            tempChannels.delete(oldState.channelId);
+            tempVoiceChannels.delete(oldState.channelId);
             await voiceChannel.delete().catch(() => {});
-            
-            const textChannel = oldState.guild.channels.cache.get(data.textChannelId);
-            if (textChannel) {
-                await textChannel.delete().catch(() => {});
-            }
         }
     }
 });
