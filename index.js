@@ -16,6 +16,10 @@ function buildTempRoomControlUI(userTag) {
     return { content: `مرحباً بك ${userTag} في رومك الصوتي الخاص.` };
 }
 
+client.once('ready', () => {
+    console.log(`Logged in as ${client.user.tag}!`);
+});
+
 client.on('voiceStateUpdate', async (oldState, newState) => {
     const guild = newState.guild || oldState.guild;
     const member = newState.member || oldState.member;
@@ -24,8 +28,9 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
 
     const userId = member.id;
     const userData = userVoiceActivity.get(userId) || { voiceTime: 0, joinTimestamp: null };
-    const logChannel = guild.channels.cache.get(process.env.LOG_CHANNEL_ID);
+    const logChannel = process.env.LOG_CHANNEL_ID ? guild.channels.cache.get(process.env.LOG_CHANNEL_ID) : null;
 
+    // تتبع وقت الVOICE
     if (!oldState.channelId && newState.channelId) {
         userData.joinTimestamp = Date.now();
         userVoiceActivity.set(userId, userData);
@@ -37,21 +42,27 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         }
     }
 
+    // إنشاء الروم المؤقت
     if (newState.channelId && newState.channelId === process.env.JOIN_CHANNEL_ID) {
         try {
             const parentCategory = process.env.CATEGORY_ID || null;
             const fetchedMember = await guild.members.fetch(member.id).catch(() => member);
             const roomName = `🔊 | ${fetchedMember.displayName}`;
 
-            const tempVoiceChannel = await guild.channels.create({
+            const channelOptions = {
                 name: roomName,
                 type: ChannelType.GuildVoice,
-                parent: parentCategory,
                 permissionOverwrites: [
                     { id: guild.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
                     { id: member.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] }
                 ]
-            });
+            };
+
+            if (parentCategory) {
+                channelOptions.parent = parentCategory;
+            }
+
+            const tempVoiceChannel = await guild.channels.create(channelOptions);
 
             tempVoiceChannels.set(tempVoiceChannel.id, member.id);
             await member.voice.setChannel(tempVoiceChannel).catch(() => {});
@@ -84,6 +95,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         }
     }
 
+    // حذف الروم الصوتي إذا فاضي
     if (oldState.channelId && tempVoiceChannels.has(oldState.channelId)) {
         const voiceChannel = oldState.guild.channels.cache.get(oldState.channelId);
         if (voiceChannel && voiceChannel.members.size === 0) {
