@@ -1,5 +1,19 @@
 const { Client, GatewayIntentBits, ChannelType, PermissionFlagsBits } = require('discord.js');
+const express = require('express');
 
+// إعداد سيرفر Express البسيط عشان Render يلقى بورت مفتوح وما يقفل التطبيق
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get('/', (req, res) => {
+  res.send('Bot is active and running!');
+});
+
+app.listen(PORT, () => {
+  console.log(`Express server is listening on port ${PORT}`);
+});
+
+// إعداد بوت الديسكورد
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
