@@ -67,19 +67,59 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     const member = newState.member || oldState.member;
     if (!member || member.user.bot) return;
 
+    // عند دخول روم الصناعة
     if (newState.channelId === process.env.JOIN_CHANNEL_ID) {
-        const channel = await guild.channels.create({
-            name: `🔊 | ${member.displayName}`,
-            type: ChannelType.GuildVoice,
-            parent: process.env.CATEGORY_ID
-        });
-        tempVoiceChannels.set(channel.id, member.id);
-        await member.voice.setChannel(channel);
-        setTimeout(async () => {
-            await channel.send(buildTempRoomControlUI(member));
-        }, 1000);
+        try {
+            const channel = await guild.channels.create({
+                name: `🔊 | ${member.displayName}`,
+                type: ChannelType.GuildVoice,
+                parent: process.env.CATEGORY_ID,
+                permissionOverwrites: [
+                    {
+                        id: guild.id,
+                        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect],
+                    },
+                    {
+                        id: member.id,
+                        allow: [
+                            PermissionFlagsBits.ViewChannel, 
+                            PermissionFlagsBits.Connect, 
+                            PermissionFlagsBits.ManageChannels, 
+                            PermissionFlagsBits.SendMessages,
+                            PermissionFlagsBits.ReadMessageHistory
+                        ],
+                    },
+                    {
+                        id: client.user.id,
+                        allow: [
+                            PermissionFlagsBits.ViewChannel, 
+                            PermissionFlagsBits.Connect, 
+                            PermissionFlagsBits.ManageChannels, 
+                            PermissionFlagsBits.SendMessages,
+                            PermissionFlagsBits.ReadMessageHistory
+                        ],
+                    }
+                ]
+            });
+
+            tempVoiceChannels.set(channel.id, member.id);
+            await member.voice.setChannel(channel);
+
+            // إرسال اللوحة بعد التأكد من جاهزية الروم بالكامل
+            setTimeout(async () => {
+                try {
+                    await channel.send(buildTempRoomControlUI(member));
+                } catch (err) {
+                    console.error("خطأ في إرسال اللوحة داخل الروم الصوتي:", err);
+                }
+            }, 1500);
+
+        } catch (error) {
+            console.error("خطأ أثناء إنشاء الروم الصوتي:", error);
+        }
     }
 
+    // حذف الروم إذا كان فارغاً
     if (oldState.channelId && tempVoiceChannels.has(oldState.channelId)) {
         const channel = guild.channels.cache.get(oldState.channelId);
         if (channel && channel.members.size === 0) {
