@@ -1,7 +1,7 @@
 const { Client, GatewayIntentBits, ChannelType, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const express = require('express');
 
-// إعداد سيرفر Express عشان Render
+// إعداد سيرفر Express عشان Render ما يقفل البوت
 const app = express();
 const PORT = process.env.PORT || 3000;
 app.get('/', (req, res) => res.send('Bot is active!'));
@@ -16,8 +16,10 @@ const client = new Client({
     ]
 });
 
+// خريطة لتخزين ارتباط الروم الصوتي والنصي المؤقت
 const tempVoiceChannels = new Map();
 
+// دالة تصميم لوحة التحكم بالأزرار
 function buildTempRoomControlUI(member) {
     const embed = new EmbedBuilder()
         .setColor(0x3b82f6)
@@ -58,60 +60,74 @@ function buildTempRoomControlUI(member) {
     };
 }
 
-client.once('ready', () => console.log(`Logged in as ${client.user.tag}!`));
+client.once('ready', () => {
+    console.log(`Logged in as ${client.user.tag}!`);
+});
 
 client.on('voiceStateUpdate', async (oldState, newState) => {
     const guild = newState.guild;
     const member = newState.member;
     if (!member || member.user.bot) return;
 
-    // 1. عند دخول روم الإنشاء
+    // 1. عندما يدخل العضو روم الإنشاء المحدد
     if (newState.channelId === process.env.JOIN_CHANNEL_ID) {
         try {
-            // إنشاء روم صوتي مع صلاحيات كاملة للبوت والعضو
+            // إنشاء الروم الصوتي المؤقت
             const voiceChannel = await guild.channels.create({
                 name: `🔊 | ${member.displayName}`,
                 type: ChannelType.GuildVoice,
                 parent: process.env.CATEGORY_ID,
                 permissionOverwrites: [
-                    {
-                        id: guild.id,
-                        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect]
-                    },
-                    {
-                        id: member.id,
-                        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.SendMessages]
-                    },
-                    {
-                        id: client.user.id,
-                        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.SendMessages]
-                    }
+                    { id: guild.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] },
+                    { id: member.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.ManageChannels] }
                 ]
             });
 
-            tempVoiceChannels.set(voiceChannel.id, member.id);
+            // إنشاء قناة نصية خاصة للروم لتظهر فيها الرسالة والأزرار بضمان 100%
+            const textChannel = await guild.channels.create({
+                name: `text-${member.user.username}`,
+                type: ChannelType.GuildText,
+                parent: process.env.CATEGORY_ID,
+                permissionOverwrites: [
+                    { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] }, // مخفية عن الجميع
+                    { id: member.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+                    { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageChannels] }
+                ]
+            });
+
+            // حفظ بيانات الرابط في الذاكرة
+            tempVoiceChannels.set(voiceChannel.id, { 
+                userId: member.id, 
+                textChannelId: textChannel.id 
+            });
+
+            // نقل العضو إلى الروم الصوتي الجديد
             await member.voice.setChannel(voiceChannel);
 
-            // إرسال اللوحة والأزرار داخل الشات الخاص بالقناة
-            setTimeout(async () => {
-                try {
-                    await voiceChannel.send(buildTempRoomControlUI(member));
-                } catch (err) {
-                    console.error("خطأ في إرسال اللوحة:", err);
-                }
-            }, 1500);
+            // إرسال اللوحة والأزرار فوراً في القناة النصية المخصصة
+            await textChannel.send(buildTempRoomControlUI(member));
 
         } catch (error) {
-            console.error("خطأ أثناء إنشاء الروم:", error);
+            console.error("خطأ أثناء إنشاء الروم الصوتي أو النصي:", error);
         }
     }
 
-    // 2. حذف الروم إذا أصبح فارغاً
+    // 2. عندما يخرج الأعضاء ويصبح الروم الصوتي فارغاً يتم حذفه مع قناته النصية
     if (oldState.channelId && tempVoiceChannels.has(oldState.channelId)) {
+        const data = tempVoiceChannels.get(oldState.channelId);
         const voiceChannel = oldState.guild.channels.cache.get(oldState.channelId);
+        
         if (voiceChannel && voiceChannel.members.size === 0) {
-            tempVoiceChannels.delete(voiceChannel.id);
+            tempVoiceChannels.delete(oldState.channelId);
+            
+            // حذف الروم الصوتي
             await voiceChannel.delete().catch(() => {});
+            
+            // حذف القناة النصية المرتبطة به
+            const textChannel = oldState.guild.channels.cache.get(data.textChannelId);
+            if (textChannel) {
+                await textChannel.delete().catch(() => {});
+            }
         }
     }
 });
