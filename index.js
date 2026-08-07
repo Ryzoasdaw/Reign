@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, ChannelType, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, UserSelectMenuBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, ChannelType, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, UserSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const express = require('express');
 
 const app = express();
@@ -25,24 +25,24 @@ function getControlUI(member) {
         .setFooter({ text: `أنشأ بواسطة ${member.displayName}`, iconURL: member.user.displayAvatarURL() });
 
     const row1 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('hide_room').setLabel('إخفاء').setStyle(ButtonStyle.Secondary).setEmoji('🔒'),
-        new ButtonBuilder().setCustomId('unhide_room').setLabel('إظهار').setStyle(ButtonStyle.Secondary).setEmoji('👁️'),
+        new ButtonBuilder().setCustomId('lock_room').setLabel('قفل').setStyle(ButtonStyle.Secondary).setEmoji('🔒'),
         new ButtonBuilder().setCustomId('unlock_room').setLabel('افتح').setStyle(ButtonStyle.Secondary).setEmoji('🔓'),
-        new ButtonBuilder().setCustomId('lock_room').setLabel('قفل').setStyle(ButtonStyle.Secondary).setEmoji('🔒')
+        new ButtonBuilder().setCustomId('hide_room').setLabel('إخفاء').setStyle(ButtonStyle.Secondary).setEmoji('🔒'),
+        new ButtonBuilder().setCustomId('unhide_room').setLabel('إظهار').setStyle(ButtonStyle.Secondary).setEmoji('👁️')
     );
 
     const row2 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('invite_user').setLabel('دعوة').setStyle(ButtonStyle.Secondary).setEmoji('✉️'),
-        new ButtonBuilder().setCustomId('unban_user').setLabel('إلغاء الحظر').setStyle(ButtonStyle.Secondary).setEmoji('👤'),
+        new ButtonBuilder().setCustomId('kick_user').setLabel('طرد').setStyle(ButtonStyle.Secondary).setEmoji('👢'),
         new ButtonBuilder().setCustomId('ban_user').setLabel('حظر').setStyle(ButtonStyle.Secondary).setEmoji('👤'),
-        new ButtonBuilder().setCustomId('kick_user').setLabel('طرد').setStyle(ButtonStyle.Secondary).setEmoji('👢')
+        new ButtonBuilder().setCustomId('unban_user').setLabel('إلغاء الحظر').setStyle(ButtonStyle.Secondary).setEmoji('👤'),
+        new ButtonBuilder().setCustomId('invite_user').setLabel('دعوة').setStyle(ButtonStyle.Secondary).setEmoji('✉️')
     );
 
     const row3 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('allow_user').setLabel('سماح').setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId('region_room').setLabel('الريجن').setStyle(ButtonStyle.Secondary).setEmoji('🌍'),
+        new ButtonBuilder().setCustomId('rename_room').setLabel('تغيير الاسم').setStyle(ButtonStyle.Secondary).setEmoji('✏️'),
         new ButtonBuilder().setCustomId('limit_room').setLabel('الحد الأقصى').setStyle(ButtonStyle.Secondary).setEmoji('⏱️'),
-        new ButtonBuilder().setCustomId('rename_room').setLabel('تغيير الاسم').setStyle(ButtonStyle.Secondary).setEmoji('✏️')
+        new ButtonBuilder().setCustomId('region_room').setLabel('الريجن').setStyle(ButtonStyle.Secondary).setEmoji('🌍'),
+        new ButtonBuilder().setCustomId('allow_user').setLabel('سماح').setStyle(ButtonStyle.Success)
     );
 
     const row4 = new ActionRowBuilder().addComponents(
@@ -182,6 +182,18 @@ client.on('interactionCreate', async interaction => {
             const row = new ActionRowBuilder().addComponents(selectMenu);
             return interaction.reply({ content: 'اختر العضو لإلغاء السماح وصلاحيات الميوت والدفن عنه:', components: [row], ephemeral: true });
         }
+        else if (interaction.customId === 'limit_room') {
+            const modal = new ModalBuilder().setCustomId('modal_limit').setTitle('تحديد الحد الأقصى للأعضاء');
+            const input = new TextInputBuilder().setCustomId('limit_input').setLabel('أدخل الرقم (من 0 إلى 99):').setStyle(TextInputStyle.Short).setRequired(true);
+            modal.addComponents(new ActionRowBuilder().addComponents(input));
+            return interaction.showModal(modal);
+        }
+        else if (interaction.customId === 'rename_room') {
+            const modal = new ModalBuilder().setCustomId('modal_rename').setTitle('تغيير اسم الروم');
+            const input = new TextInputBuilder().setCustomId('rename_input').setLabel('أدخل الاسم الجديد:').setStyle(TextInputStyle.Short).setRequired(true);
+            modal.addComponents(new ActionRowBuilder().addComponents(input));
+            return interaction.showModal(modal);
+        }
         else {
             return interaction.reply({ content: `✅ تم تنفيذ أمر الزر (${interaction.customId}) بنجاح!`, ephemeral: true });
         }
@@ -224,6 +236,26 @@ client.on('interactionCreate', async interaction => {
         } catch (err) {
             console.error(err);
             await interaction.update({ content: '❌ حدث خطأ أثناء تطبيق الإجراء.', components: [] });
+        }
+    }
+
+    if (interaction.isModalSubmit()) {
+        if (!voiceChannel) {
+            return interaction.reply({ content: '❌ لم يتم العثور على الروم الصوتي.', ephemeral: true });
+        }
+
+        if (interaction.customId === 'modal_limit') {
+            const limitVal = parseInt(interaction.fields.getTextInputValue('limit_input'));
+            if (isNaN(limitVal) || limitVal < 0 || limitVal > 99) {
+                return interaction.reply({ content: '❌ أدخل رقم صحيح بين 0 و 99!', ephemeral: true });
+            }
+            await voiceChannel.setUserLimit(limitVal);
+            return interaction.reply({ content: `⏱️ تم تعديل الحد الأقصى للأعضاء إلى: **${limitVal}**`, ephemeral: true });
+        }
+        else if (interaction.customId === 'modal_rename') {
+            const newName = interaction.fields.getTextInputValue('rename_input');
+            await voiceChannel.setName(newName);
+            return interaction.reply({ content: `✏️ تم تغيير اسم الروم إلى: **${newName}**`, ephemeral: true });
         }
     }
 });
