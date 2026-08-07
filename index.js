@@ -1,3 +1,28 @@
+const { Client, GatewayIntentBits, ChannelType, PermissionFlagsBits } = require('discord.js');
+
+// 1. إنشاء الـ client (هذا هو السطر الذي يمنع خطأ ReferenceError تماماً)
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildVoiceStates,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent
+    ]
+});
+
+// 2. تعريف الخرائط (Maps) لحفظ بيانات النشاط والرومات المؤقتة
+const userVoiceActivity = new Map();
+const tempVoiceChannels = new Map();
+
+// 3. دالة بناء واجهة لوحة التحكم للروم المؤقت
+function buildTempRoomControlUI(userTag) {
+    return {
+        content: `مرحباً بك ${userTag} في رومك الصوتي الخاص. يمكنك التحكم بالروم عبر الأزرار أدناه:`
+        // يمكنك إضافة components (الأزرار) هنا حسب رغبتك
+    };
+}
+
+// 4. الحدث الأساسي لإدارة الرومات الصوتية
 client.on('voiceStateUpdate', async (oldState, newState) => {
     const guild = newState.guild || oldState.guild;
     const member = newState.member || oldState.member;
@@ -38,7 +63,7 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
             tempVoiceChannels.set(tempVoiceChannel.id, member.id);
             await member.voice.setChannel(tempVoiceChannel).catch(() => {});
 
-            // تأخير بسييط جداً لضمان جاهزية قناة الصوت للنصوص داخل ديسكورد ثم إرسال اللوحة
+            // تأخير بسيط لضمان جاهزية قناة الصوت للنصوص داخل ديسكورد ثم إرسال اللوحة
             setTimeout(async () => {
                 const welcomeData = buildTempRoomControlUI(`<@${member.id}>`);
                 await tempVoiceChannel.send(welcomeData).catch(err => console.error("خطأ في إرسال لوحة الروم:", err));
@@ -75,3 +100,6 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         }
     }
 });
+
+// 5. تسجيل الدخول باستخدام التوكن من المتغيرات البيئية
+client.login(process.env.TOKEN);
