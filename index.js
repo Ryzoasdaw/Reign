@@ -66,10 +66,8 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     const member = newState.member;
     if (!member || member.user.bot) return;
 
-    // عند دخول روم الإنشاء
     if (newState.channelId === process.env.JOIN_CHANNEL_ID) {
         try {
-            // إنشاء الروم الصوتي مع صلاحيات تفعيل الشات الصوتي الداخلي
             const voiceChannel = await guild.channels.create({
                 name: `🔊 | ${member.displayName}`,
                 type: ChannelType.GuildVoice,
@@ -100,16 +98,13 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
             });
 
             tempVoiceChannels.set(voiceChannel.id, member.id);
-
-            // نقل العضو للروم الصوتي
             await member.voice.setChannel(voiceChannel);
 
-            // الانتظار قليلاً لضمان استقرار الروم ثم إرسال اللوحة بداخله مباشرة
             setTimeout(async () => {
                 try {
                     await voiceChannel.send(getControlUI(member));
                 } catch (err) {
-                    console.error("فشل إرسال اللوحة داخل شات الروم الصوتي:", err);
+                    console.error("فشل إرسال الرسالة داخل الشات الصوتي:", err);
                 }
             }, 1500);
 
@@ -118,10 +113,8 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         }
     }
 
-    // عند خروج الجميع وحذف الروم الصوتي
     if (oldState.channelId && tempVoiceChannels.has(oldState.channelId)) {
         const voiceChannel = oldState.guild.channels.cache.get(oldState.channelId);
-
         if (voiceChannel && voiceChannel.members.size === 0) {
             tempVoiceChannels.delete(oldState.channelId);
             await voiceChannel.delete().catch(() => {});
