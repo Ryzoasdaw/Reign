@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, ChannelType, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+const { Client, GatewayIntentBits, ChannelType, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, UserSelectMenuBuilder } = require('discord.js');
 const express = require('express');
 
 const app = express();
@@ -121,23 +121,23 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     }
 });
 
-// معالجة الأزرار والنوافذ المنبثقة
+// معالجة الأزرار والقوائم المنسدلة
 client.on('interactionCreate', async interaction => {
     const channelId = interaction.channelId;
     const ownerId = tempVoiceChannels.get(channelId);
 
-    // التحقق أن الشخص هو صاحب الروم (للأزرار والنوافذ التابعة له)
-    if (ownerId && interaction.user.id !== ownerId && !interaction.isRepliable()) {
+    // التحقق من صاحب الروم للأزرار والقوائم الخاصة به
+    if (ownerId && interaction.user.id !== ownerId) {
+        if (interaction.isRepliable()) {
+            return interaction.reply({ content: '❌ عذراً، هذه القناة ليست ملكك للتحكم بها!', ephemeral: true });
+        }
         return;
     }
 
-    // التعامل مع الأزرار
-    if (interaction.isButton()) {
-        if (!ownerId || interaction.user.id !== ownerId) {
-            return interaction.reply({ content: '❌ عذراً، هذه القناة ليست ملكك للتحكم بها!', ephemeral: true });
-        }
+    const voiceChannel = interaction.guild.channels.cache.get(channelId);
 
-        const voiceChannel = interaction.guild.channels.cache.get(channelId);
+    // 1. التعامل مع الأزرار العادية
+    if (interaction.isButton()) {
         if (!voiceChannel) {
             return interaction.reply({ content: '❌ لم يتم العثور على الروم الصوتي المرتبط!', ephemeral: true });
         }
@@ -158,66 +158,70 @@ client.on('interactionCreate', async interaction => {
             await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: true });
             return interaction.reply({ content: '👁️ تم إظهار الروم بنجاح.', ephemeral: true });
         }
-        // فتح نافذة منبثقة لإدخال آيدي العضو للطرد
+        // إظهار قائمة اختيار الأعضاء عند الضغط على زر طرد
         else if (interaction.customId === 'kick_user') {
-            const modal = new ModalBuilder().setCustomId('modal_kick').setTitle('طرد عضو من الروم');
-            const input = new TextInputBuilder().setCustomId('target_id').setLabel('أدخل آيدي العضو (User ID)').setStyle(TextInputStyle.Short).setRequired(true);
-            modal.addComponents(new ActionRowBuilder().addComponents(input));
-            return interaction.showModal(modal);
+            const selectMenu = new UserSelectMenuBuilder()
+                .setCustomId('select_kick')
+                .setPlaceholder('اختر العضو المراد طرده')
+                .setMinValues(1)
+                .setMaxValues(1);
+            const row = new ActionRowBuilder().addComponents(selectMenu);
+            return interaction.reply({ content: 'اختر العضو المراد طرده من القائمة أدناه:', components: [row], ephemeral: true });
         }
-        // فتح نافذة منبثقة للسماح لعضو
+        // إظهار قائمة اختيار الأعضاء عند الضغط على زر سماح
         else if (interaction.customId === 'allow_user') {
-            const modal = new ModalBuilder().setCustomId('modal_allow').setTitle('سماح لعضو بالدخول');
-            const input = new TextInputBuilder().setCustomId('target_id').setLabel('أدخل آيدي العضو (User ID)').setStyle(TextInputStyle.Short).setRequired(true);
-            modal.addComponents(new ActionRowBuilder().addComponents(input));
-            return interaction.showModal(modal);
+            const selectMenu = new UserSelectMenuBuilder()
+                .setCustomId('select_allow')
+                .setPlaceholder('اختر العضو للسماح له بالدخول')
+                .setMinValues(1)
+                .setMaxValues(1);
+            const row = new ActionRowBuilder().addComponents(selectMenu);
+            return interaction.reply({ content: 'اختر العضو للسماح له بالدخول من القائمة أدناه:', components: [row], ephemeral: true });
         }
-        // فتح نافذة منبثقة لإلغاء السماح
+        // إظهار قائمة اختيار الأعضاء عند الضغط على زر إلغاء السماح
         else if (interaction.customId === 'deny_user') {
-            const modal = new ModalBuilder().setCustomId('modal_deny').setTitle('إلغاء السماح عن عضو');
-            const input = new TextInputBuilder().setCustomId('target_id').setLabel('أدخل آيدي العضو (User ID)').setStyle(TextInputStyle.Short).setRequired(true);
-            modal.addComponents(new ActionRowBuilder().addComponents(input));
-            return interaction.showModal(modal);
+            const selectMenu = new UserSelectMenuBuilder()
+                .setCustomId('select_deny')
+                .setPlaceholder('اختر العضو لإلغاء السماح عنه')
+                .setMinValues(1)
+                .setMaxValues(1);
+            const row = new ActionRowBuilder().addComponents(selectMenu);
+            return interaction.reply({ content: 'اختر العضو لإلغاء السماح عنه من القائمة أدناه:', components: [row], ephemeral: true });
         }
         else {
             return interaction.reply({ content: `✅ تم تنفيذ أمر الزر (${interaction.customId}) بنجاح!`, ephemeral: true });
         }
     }
 
-    // التعامل مع النوافذ المنبثقة (Modals) بعد إدخال الآيدي
-    if (interaction.isModalSubmit()) {
-        const targetId = interaction.fields.getTextInputValue('target_id');
-        const voiceChannel = interaction.guild.channels.cache.get(channelId);
-        
+    // 2. التعامل مع اختيار العضو من القائمة المنسدلة (User Select Menu)
+    if (interaction.isUserSelectMenu()) {
         if (!voiceChannel) {
             return interaction.reply({ content: '❌ لم يتم العثور على الروم الصوتي.', ephemeral: true });
         }
 
-        try {
-            const targetMember = await interaction.guild.members.fetch(targetId).catch(() => null);
-            if (!targetMember) {
-                return interaction.reply({ content: '❌ لم يتم العثور على العضو بهذا الآيدي تأكد منه!', ephemeral: true });
-            }
+        const targetId = interaction.values[0];
 
-            if (interaction.customId === 'modal_kick') {
-                if (targetMember.voice.channelId === voiceChannel.id) {
+        try {
+            if (interaction.customId === 'select_kick') {
+                const targetMember = await interaction.guild.members.fetch(targetId).catch(() => null);
+                if (targetMember && targetMember.voice.channelId === voiceChannel.id) {
                     await targetMember.voice.disconnect();
-                    await interaction.reply({ content: `👢 تم طرد العضو <@${targetId}> من الروم بنجاح.`, ephemeral: true });
+                    await interaction.update({ content: `👢 تم طرد العضو <@${targetId}> من الروم بنجاح.`, components: [] });
                 } else {
-                    await interaction.reply({ content: '❌ العضو ليس موجوداً في رومك الصوتي حالياً!', ephemeral: true });
+                    await interaction.update({ content: '❌ العضو ليس موجوداً في رومك الصوتي حالياً!', components: [] });
                 }
             } 
-            else if (interaction.customId === 'modal_allow') {
+            else if (interaction.customId === 'select_allow') {
                 await voiceChannel.permissionOverwrites.edit(targetId, { Connect: true, ViewChannel: true });
-                await interaction.reply({ content: `✅ تم السماح للعضو <@${targetId}> بدخول الروم.`, ephemeral: true });
+                await interaction.update({ content: `✅ تم السماح للعضو <@${targetId}> بدخول الروم.`, components: [] });
             } 
-            else if (interaction.customId === 'modal_deny') {
+            else if (interaction.customId === 'select_deny') {
                 await voiceChannel.permissionOverwrites.edit(targetId, { Connect: false });
-                await interaction.reply({ content: `⛔ تم إلغاء السماح عن العضو <@${targetId}>.`, ephemeral: true });
+                await interaction.update({ content: `⛔ تم إلغاء السماح عن العضو <@${targetId}>.`, components: [] });
             }
         } catch (err) {
             console.error(err);
-            await interaction.reply({ content: '❌ حدث خطأ أثناء تطبيق الإجراء، تأكد من صحة الآيدي.', ephemeral: true });
+            await interaction.update({ content: '❌ حدث خطأ أثناء تطبيق الإجراء.', components: [] });
         }
     }
 });
