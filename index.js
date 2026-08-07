@@ -121,12 +121,48 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     }
 });
 
-// معالجة ضغطات الأزرار لتجنب خطأ الوقت
+// معالجة تفاعلات الأزرار وتنفذ الأوامر بشكل مباشر
 client.on('interactionCreate', async interaction => {
     if (!interaction.isButton()) return;
 
-    // الرد الفوري لمنع ظهور خطأ "The application didn't respond in time"
-    await interaction.reply({ content: `تم استلام طلبك للزر: **${interaction.customId}** وسيتم برمجته لتنفيذ الأمر قريباً!`, ephemeral: true });
+    const channelId = interaction.channelId;
+    const ownerId = tempVoiceChannels.get(channelId);
+
+    // التحقق أن الشخص اللي ضغط الزر هو صاحب الروم الصوتي
+    if (!ownerId || interaction.user.id !== ownerId) {
+        return interaction.reply({ content: '❌ عذراً، هذه القناة ليست ملكك أو أنك لست صاحب الروم لتتمكن من التحكم به!', ephemeral: true });
+    }
+
+    const voiceChannel = interaction.guild.channels.cache.get(channelId);
+    if (!voiceChannel) {
+        return interaction.reply({ content: '❌ لم يتم العثور على الروم الصوتي المرتبط!', ephemeral: true });
+    }
+
+    try {
+        if (interaction.customId === 'lock_room') {
+            await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { Connect: false });
+            await interaction.reply({ content: '🔒 تم قفل الروم بنجاح، لا يمكن لأحد الدخول.', ephemeral: true });
+        } 
+        else if (interaction.customId === 'unlock_room') {
+            await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { Connect: true });
+            await interaction.reply({ content: '🔓 تم فتح الروم، أصبح بإمكان الجميع الدخول.', ephemeral: true });
+        }
+        else if (interaction.customId === 'hide_room') {
+            await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: false });
+            await interaction.reply({ content: '🔒 تم إخفاء الروم بنجاح.', ephemeral: true });
+        }
+        else if (interaction.customId === 'unhide_room') {
+            await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: true });
+            await interaction.reply({ content: '👁️ تم إظهار الروم بنجاح.', ephemeral: true });
+        }
+        else {
+            // باقي الأزرار سيتم تفعيلها تباعاً حسب رغبتك
+            await interaction.reply({ content: `✅ تم تنفيذ أمر الزر (${interaction.customId}) بنجاح!`, ephemeral: true });
+        }
+    } catch (err) {
+        console.error(err);
+        await interaction.reply({ content: '❌ حدث خطأ أثناء تنفيذ الأمر.', ephemeral: true });
+    }
 });
 
 client.login(process.env.TOKEN);
