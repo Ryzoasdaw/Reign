@@ -126,7 +126,6 @@ client.on('interactionCreate', async interaction => {
     const channelId = interaction.channelId;
     const ownerId = tempVoiceChannels.get(channelId);
 
-    // التحقق من صاحب الروم للأزرار والقوائم الخاصة به
     if (ownerId && interaction.user.id !== ownerId) {
         if (interaction.isRepliable()) {
             return interaction.reply({ content: '❌ عذراً، هذه القناة ليست ملكك للتحكم بها!', ephemeral: true });
@@ -136,7 +135,6 @@ client.on('interactionCreate', async interaction => {
 
     const voiceChannel = interaction.guild.channels.cache.get(channelId);
 
-    // 1. التعامل مع الأزرار العادية
     if (interaction.isButton()) {
         if (!voiceChannel) {
             return interaction.reply({ content: '❌ لم يتم العثور على الروم الصوتي المرتبط!', ephemeral: true });
@@ -158,7 +156,6 @@ client.on('interactionCreate', async interaction => {
             await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: true });
             return interaction.reply({ content: '👁️ تم إظهار الروم بنجاح.', ephemeral: true });
         }
-        // إظهار قائمة اختيار الأعضاء عند الضغط على زر طرد
         else if (interaction.customId === 'kick_user') {
             const selectMenu = new UserSelectMenuBuilder()
                 .setCustomId('select_kick')
@@ -168,17 +165,15 @@ client.on('interactionCreate', async interaction => {
             const row = new ActionRowBuilder().addComponents(selectMenu);
             return interaction.reply({ content: 'اختر العضو المراد طرده من القائمة أدناه:', components: [row], ephemeral: true });
         }
-        // إظهار قائمة اختيار الأعضاء عند الضغط على زر سماح
         else if (interaction.customId === 'allow_user') {
             const selectMenu = new UserSelectMenuBuilder()
                 .setCustomId('select_allow')
-                .setPlaceholder('اختر العضو للسماح له بالدخول')
+                .setPlaceholder('اختر العضو للسماح له (مع ميوت ودفن)')
                 .setMinValues(1)
                 .setMaxValues(1);
             const row = new ActionRowBuilder().addComponents(selectMenu);
-            return interaction.reply({ content: 'اختر العضو للسماح له بالدخول من القائمة أدناه:', components: [row], ephemeral: true });
+            return interaction.reply({ content: 'اختر العضو للسماح له بالدخول وإعطائه صلاحيات الميوت والدفن:', components: [row], ephemeral: true });
         }
-        // إظهار قائمة اختيار الأعضاء عند الضغط على زر إلغاء السماح
         else if (interaction.customId === 'deny_user') {
             const selectMenu = new UserSelectMenuBuilder()
                 .setCustomId('select_deny')
@@ -186,14 +181,13 @@ client.on('interactionCreate', async interaction => {
                 .setMinValues(1)
                 .setMaxValues(1);
             const row = new ActionRowBuilder().addComponents(selectMenu);
-            return interaction.reply({ content: 'اختر العضو لإلغاء السماح عنه من القائمة أدناه:', components: [row], ephemeral: true });
+            return interaction.reply({ content: 'اختر العضو لإلغاء السماح وصلاحيات الميوت والدفن عنه:', components: [row], ephemeral: true });
         }
         else {
             return interaction.reply({ content: `✅ تم تنفيذ أمر الزر (${interaction.customId}) بنجاح!`, ephemeral: true });
         }
     }
 
-    // 2. التعامل مع اختيار العضو من القائمة المنسدلة (User Select Menu)
     if (interaction.isUserSelectMenu()) {
         if (!voiceChannel) {
             return interaction.reply({ content: '❌ لم يتم العثور على الروم الصوتي.', ephemeral: true });
@@ -212,12 +206,21 @@ client.on('interactionCreate', async interaction => {
                 }
             } 
             else if (interaction.customId === 'select_allow') {
-                await voiceChannel.permissionOverwrites.edit(targetId, { Connect: true, ViewChannel: true });
-                await interaction.update({ content: `✅ تم السماح للعضو <@${targetId}> بدخول الروم.`, components: [] });
+                await voiceChannel.permissionOverwrites.edit(targetId, { 
+                    Connect: true, 
+                    ViewChannel: true,
+                    MuteMembers: true,
+                    DeafenMembers: true
+                });
+                await interaction.update({ content: `✅ تم السماح للعضو <@${targetId}> بدخول الروم مع إعطائه صلاحيات الميوت والدفن.`, components: [] });
             } 
             else if (interaction.customId === 'select_deny') {
-                await voiceChannel.permissionOverwrites.edit(targetId, { Connect: false });
-                await interaction.update({ content: `⛔ تم إلغاء السماح عن العضو <@${targetId}>.`, components: [] });
+                await voiceChannel.permissionOverwrites.edit(targetId, { 
+                    Connect: false,
+                    MuteMembers: false,
+                    DeafenMembers: false
+                });
+                await interaction.update({ content: `⛔ تم إلغاء السماح وصلاحيات الميوت والدفن عن العضو <@${targetId}>.`, components: [] });
             }
         } catch (err) {
             console.error(err);
