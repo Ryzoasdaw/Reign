@@ -1,7 +1,6 @@
 const { Client, GatewayIntentBits, ChannelType, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const express = require('express');
 
-// إعداد سيرفر Express عشان Render ما يقفل البوت
 const app = express();
 const PORT = process.env.PORT || 3000;
 app.get('/', (req, res) => res.send('Bot is active!'));
@@ -16,22 +15,20 @@ const client = new Client({
     ]
 });
 
-// خريطة لتخزين ارتباط الروم الصوتي والنصي المؤقت
-const tempVoiceChannels = new Map();
+const tempChannels = new Map();
 
-// دالة تصميم لوحة التحكم بالأزرار
-function buildTempRoomControlUI(member) {
+function getControlUI(member) {
     const embed = new EmbedBuilder()
         .setColor(0x3b82f6)
-        .setTitle('للتحكم في الروم الخاص بك الصوتي المؤقت')
-        .setDescription('المزيد من الخيارات متاحة من خلال هذه الأزرار')
-        .setFooter({ text: `تم إنشاء الروم بواسطة ${member.displayName}`, iconURL: member.user.displayAvatarURL() });
+        .setTitle('لوحة تحكم الروم الصوتي المؤقت')
+        .setDescription('استخدم الأزرار أدناه للتحكم في قناتك الصوتية:')
+        .setFooter({ text: `أنشأ بواسطة ${member.displayName}`, iconURL: member.user.displayAvatarURL() });
 
     const row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('lock_room').setLabel('قفل').setStyle(ButtonStyle.Secondary).setEmoji('🔒'),
         new ButtonBuilder().setCustomId('unlock_room').setLabel('افتح').setStyle(ButtonStyle.Secondary).setEmoji('🔓'),
-        new ButtonBuilder().setCustomId('unhide_room').setLabel('اظهار').setStyle(ButtonStyle.Secondary).setEmoji('👁️'),
-        new ButtonBuilder().setCustomId('hide_room').setLabel('احفاء').setStyle(ButtonStyle.Secondary).setEmoji('👁️‍🗨️')
+        new ButtonBuilder().setCustomId('unhide_room').setLabel('إظهار').setStyle(ButtonStyle.Secondary).setEmoji('👁️'),
+        new ButtonBuilder().setCustomId('hide_room').setLabel('إخفاء').setStyle(ButtonStyle.Secondary).setEmoji('🔒')
     );
 
     const row2 = new ActionRowBuilder().addComponents(
@@ -42,10 +39,10 @@ function buildTempRoomControlUI(member) {
     );
 
     const row3 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('rename_room').setLabel('الاسم').setStyle(ButtonStyle.Secondary).setEmoji('✏️'),
-        new ButtonBuilder().setCustomId('limit_room').setLabel('حد الأعضاء').setStyle(ButtonStyle.Secondary).setEmoji('⏱️'),
-        new ButtonBuilder().setCustomId('region_room').setLabel('ريجن الروم').setStyle(ButtonStyle.Secondary).setEmoji('🌍'),
-        new ButtonBuilder().setCustomId('bot_admin').setLabel('بوت اعالي').setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder().setCustomId('rename_room').setLabel('تغيير الاسم').setStyle(ButtonStyle.Secondary).setEmoji('✏️'),
+        new ButtonBuilder().setCustomId('limit_room').setLabel('الحد الأقصى').setStyle(ButtonStyle.Secondary).setEmoji('⏱️'),
+        new ButtonBuilder().setCustomId('region_room').setLabel('الريجن').setStyle(ButtonStyle.Secondary).setEmoji('🌍'),
+        new ButtonBuilder().setCustomId('bot_admin').setLabel('صلاحيات').setStyle(ButtonStyle.Secondary)
     );
 
     const row4 = new ActionRowBuilder().addComponents(
@@ -61,7 +58,7 @@ function buildTempRoomControlUI(member) {
 }
 
 client.once('ready', () => {
-    console.log(`Logged in as ${client.user.tag}!`);
+    console.log(`Bot logged in as ${client.user.tag}`);
 });
 
 client.on('voiceStateUpdate', async (oldState, newState) => {
@@ -69,10 +66,8 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     const member = newState.member;
     if (!member || member.user.bot) return;
 
-    // 1. عندما يدخل العضو روم الإنشاء المحدد
     if (newState.channelId === process.env.JOIN_CHANNEL_ID) {
         try {
-            // إنشاء الروم الصوتي المؤقت
             const voiceChannel = await guild.channels.create({
                 name: `🔊 | ${member.displayName}`,
                 type: ChannelType.GuildVoice,
@@ -83,47 +78,35 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
                 ]
             });
 
-            // إنشاء قناة نصية خاصة للروم لتظهر فيها الرسالة والأزرار بضمان 100%
             const textChannel = await guild.channels.create({
                 name: `text-${member.user.username}`,
                 type: ChannelType.GuildText,
                 parent: process.env.CATEGORY_ID,
                 permissionOverwrites: [
-                    { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] }, // مخفية عن الجميع
+                    { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
                     { id: member.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
                     { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageChannels] }
                 ]
             });
 
-            // حفظ بيانات الرابط في الذاكرة
-            tempVoiceChannels.set(voiceChannel.id, { 
-                userId: member.id, 
-                textChannelId: textChannel.id 
-            });
+            tempChannels.set(voiceChannel.id, { userId: member.id, textChannelId: textChannel.id });
 
-            // نقل العضو إلى الروم الصوتي الجديد
             await member.voice.setChannel(voiceChannel);
+            await textChannel.send(getControlUI(member));
 
-            // إرسال اللوحة والأزرار فوراً في القناة النصية المخصصة
-            await textChannel.send(buildTempRoomControlUI(member));
-
-        } catch (error) {
-            console.error("خطأ أثناء إنشاء الروم الصوتي أو النصي:", error);
+        } catch (err) {
+            console.error("خطأ أثناء إنشاء الروم الصوتي أو النصي:", err);
         }
     }
 
-    // 2. عندما يخرج الأعضاء ويصبح الروم الصوتي فارغاً يتم حذفه مع قناته النصية
-    if (oldState.channelId && tempVoiceChannels.has(oldState.channelId)) {
-        const data = tempVoiceChannels.get(oldState.channelId);
+    if (oldState.channelId && tempChannels.has(oldState.channelId)) {
+        const data = tempChannels.get(oldState.channelId);
         const voiceChannel = oldState.guild.channels.cache.get(oldState.channelId);
-        
+
         if (voiceChannel && voiceChannel.members.size === 0) {
-            tempVoiceChannels.delete(oldState.channelId);
-            
-            // حذف الروم الصوتي
+            tempChannels.delete(oldState.channelId);
             await voiceChannel.delete().catch(() => {});
             
-            // حذف القناة النصية المرتبطة به
             const textChannel = oldState.guild.channels.cache.get(data.textChannelId);
             if (textChannel) {
                 await textChannel.delete().catch(() => {});
