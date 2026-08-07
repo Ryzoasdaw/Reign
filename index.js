@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, ChannelType, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { Client, GatewayIntentBits, ChannelType, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const express = require('express');
 
 const app = express();
@@ -121,47 +121,104 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     }
 });
 
-// معالجة تفاعلات الأزرار وتنفذ الأوامر بشكل مباشر
+// معالجة الأزرار والنوافذ المنبثقة
 client.on('interactionCreate', async interaction => {
-    if (!interaction.isButton()) return;
-
     const channelId = interaction.channelId;
     const ownerId = tempVoiceChannels.get(channelId);
 
-    // التحقق أن الشخص اللي ضغط الزر هو صاحب الروم الصوتي
-    if (!ownerId || interaction.user.id !== ownerId) {
-        return interaction.reply({ content: '❌ عذراً، هذه القناة ليست ملكك أو أنك لست صاحب الروم لتتمكن من التحكم به!', ephemeral: true });
+    // التحقق أن الشخص هو صاحب الروم (للأزرار والنوافذ التابعة له)
+    if (ownerId && interaction.user.id !== ownerId && !interaction.isRepliable()) {
+        return;
     }
 
-    const voiceChannel = interaction.guild.channels.cache.get(channelId);
-    if (!voiceChannel) {
-        return interaction.reply({ content: '❌ لم يتم العثور على الروم الصوتي المرتبط!', ephemeral: true });
-    }
+    // التعامل مع الأزرار
+    if (interaction.isButton()) {
+        if (!ownerId || interaction.user.id !== ownerId) {
+            return interaction.reply({ content: '❌ عذراً، هذه القناة ليست ملكك للتحكم بها!', ephemeral: true });
+        }
 
-    try {
+        const voiceChannel = interaction.guild.channels.cache.get(channelId);
+        if (!voiceChannel) {
+            return interaction.reply({ content: '❌ لم يتم العثور على الروم الصوتي المرتبط!', ephemeral: true });
+        }
+
         if (interaction.customId === 'lock_room') {
             await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { Connect: false });
-            await interaction.reply({ content: '🔒 تم قفل الروم بنجاح، لا يمكن لأحد الدخول.', ephemeral: true });
+            return interaction.reply({ content: '🔒 تم قفل الروم بنجاح.', ephemeral: true });
         } 
         else if (interaction.customId === 'unlock_room') {
             await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { Connect: true });
-            await interaction.reply({ content: '🔓 تم فتح الروم، أصبح بإمكان الجميع الدخول.', ephemeral: true });
+            return interaction.reply({ content: '🔓 تم فتح الروم بنجاح.', ephemeral: true });
         }
         else if (interaction.customId === 'hide_room') {
             await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: false });
-            await interaction.reply({ content: '🔒 تم إخفاء الروم بنجاح.', ephemeral: true });
+            return interaction.reply({ content: '🔒 تم إخفاء الروم بنجاح.', ephemeral: true });
         }
         else if (interaction.customId === 'unhide_room') {
             await voiceChannel.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: true });
-            await interaction.reply({ content: '👁️ تم إظهار الروم بنجاح.', ephemeral: true });
+            return interaction.reply({ content: '👁️ تم إظهار الروم بنجاح.', ephemeral: true });
+        }
+        // فتح نافذة منبثقة لإدخال آيدي العضو للطرد
+        else if (interaction.customId === 'kick_user') {
+            const modal = new ModalBuilder().setCustomId('modal_kick').setTitle('طرد عضو من الروم');
+            const input = new TextInputBuilder().setCustomId('target_id').setLabel('أدخل آيدي العضو (User ID)').setStyle(TextInputStyle.Short).setRequired(true);
+            modal.addComponents(new ActionRowBuilder().addComponents(input));
+            return interaction.showModal(modal);
+        }
+        // فتح نافذة منبثقة للسماح لعضو
+        else if (interaction.customId === 'allow_user') {
+            const modal = new ModalBuilder().setCustomId('modal_allow').setTitle('سماح لعضو بالدخول');
+            const input = new TextInputBuilder().setCustomId('target_id').setLabel('أدخل آيدي العضو (User ID)').setStyle(TextInputStyle.Short).setRequired(true);
+            modal.addComponents(new ActionRowBuilder().addComponents(input));
+            return interaction.showModal(modal);
+        }
+        // فتح نافذة منبثقة لإلغاء السماح
+        else if (interaction.customId === 'deny_user') {
+            const modal = new ModalBuilder().setCustomId('modal_deny').setTitle('إلغاء السماح عن عضو');
+            const input = new TextInputBuilder().setCustomId('target_id').setLabel('أدخل آيدي العضو (User ID)').setStyle(TextInputStyle.Short).setRequired(true);
+            modal.addComponents(new ActionRowBuilder().addComponents(input));
+            return interaction.showModal(modal);
         }
         else {
-            // باقي الأزرار سيتم تفعيلها تباعاً حسب رغبتك
-            await interaction.reply({ content: `✅ تم تنفيذ أمر الزر (${interaction.customId}) بنجاح!`, ephemeral: true });
+            return interaction.reply({ content: `✅ تم تنفيذ أمر الزر (${interaction.customId}) بنجاح!`, ephemeral: true });
         }
-    } catch (err) {
-        console.error(err);
-        await interaction.reply({ content: '❌ حدث خطأ أثناء تنفيذ الأمر.', ephemeral: true });
+    }
+
+    // التعامل مع النوافذ المنبثقة (Modals) بعد إدخال الآيدي
+    if (interaction.isModalSubmit()) {
+        const targetId = interaction.fields.getTextInputValue('target_id');
+        const voiceChannel = interaction.guild.channels.cache.get(channelId);
+        
+        if (!voiceChannel) {
+            return interaction.reply({ content: '❌ لم يتم العثور على الروم الصوتي.', ephemeral: true });
+        }
+
+        try {
+            const targetMember = await interaction.guild.members.fetch(targetId).catch(() => null);
+            if (!targetMember) {
+                return interaction.reply({ content: '❌ لم يتم العثور على العضو بهذا الآيدي تأكد منه!', ephemeral: true });
+            }
+
+            if (interaction.customId === 'modal_kick') {
+                if (targetMember.voice.channelId === voiceChannel.id) {
+                    await targetMember.voice.disconnect();
+                    await interaction.reply({ content: `👢 تم طرد العضو <@${targetId}> من الروم بنجاح.`, ephemeral: true });
+                } else {
+                    await interaction.reply({ content: '❌ العضو ليس موجوداً في رومك الصوتي حالياً!', ephemeral: true });
+                }
+            } 
+            else if (interaction.customId === 'modal_allow') {
+                await voiceChannel.permissionOverwrites.edit(targetId, { Connect: true, ViewChannel: true });
+                await interaction.reply({ content: `✅ تم السماح للعضو <@${targetId}> بدخول الروم.`, ephemeral: true });
+            } 
+            else if (interaction.customId === 'modal_deny') {
+                await voiceChannel.permissionOverwrites.edit(targetId, { Connect: false });
+                await interaction.reply({ content: `⛔ تم إلغاء السماح عن العضو <@${targetId}>.`, ephemeral: true });
+            }
+        } catch (err) {
+            console.error(err);
+            await interaction.reply({ content: '❌ حدث خطأ أثناء تطبيق الإجراء، تأكد من صحة الآيدي.', ephemeral: true });
+        }
     }
 });
 
