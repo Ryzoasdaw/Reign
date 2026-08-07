@@ -1,7 +1,7 @@
-const { Client, GatewayIntentBits, ChannelType, PermissionFlagsBits } = require('discord.js');
+const { Client, GatewayIntentBits, ChannelType, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const express = require('express');
 
-// إعداد سيرفر Express البسيط عشان Render يلقى بورت مفتوح وما يقفل التطبيق
+// إعداد سيرفر Express عشان Render
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -13,7 +13,6 @@ app.listen(PORT, () => {
   console.log(`Express server is listening on port ${PORT}`);
 });
 
-// إعداد بوت الديسكورد
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -23,98 +22,69 @@ const client = new Client({
     ]
 });
 
-const userVoiceActivity = new Map();
 const tempVoiceChannels = new Map();
 
-function buildTempRoomControlUI(userTag) {
-    return { content: `مرحباً بك ${userTag} في رومك الصوتي الخاص.` };
+function buildTempRoomControlUI(member) {
+    const embed = new EmbedBuilder()
+        .setColor(0x000000)
+        .setTitle('للتحكم في الروم الخاص بك الصوتي المؤقت')
+        .setDescription('المزيد من الخيارات متاحة من خلال هذه الأزرار')
+        .setFooter({ text: `تم إنشاء الروم بواسطة ${member.displayName}` });
+
+    const row1 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('lock_room').setLabel('قفل').setStyle(ButtonStyle.Secondary).setEmoji('🔒'),
+        new ButtonBuilder().setCustomId('unlock_room').setLabel('افتح').setStyle(ButtonStyle.Secondary).setEmoji('🔓'),
+        new ButtonBuilder().setCustomId('unhide_room').setLabel('اظهار').setStyle(ButtonStyle.Secondary).setEmoji('👁️'),
+        new ButtonBuilder().setCustomId('hide_room').setLabel('احفاء').setStyle(ButtonStyle.Secondary).setEmoji('👁️‍🗨️')
+    );
+
+    const row2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('kick_user').setLabel('طرد').setStyle(ButtonStyle.Secondary).setEmoji('👢'),
+        new ButtonBuilder().setCustomId('ban_user').setLabel('حظر').setStyle(ButtonStyle.Secondary).setEmoji('👤'),
+        new ButtonBuilder().setCustomId('unban_user').setLabel('إلغاء الحظر').setStyle(ButtonStyle.Secondary).setEmoji('👤'),
+        new ButtonBuilder().setCustomId('invite_user').setLabel('دعوة').setStyle(ButtonStyle.Secondary).setEmoji('✉️')
+    );
+
+    const row3 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('rename_room').setLabel('الاسم').setStyle(ButtonStyle.Secondary).setEmoji('👤'),
+        new ButtonBuilder().setCustomId('limit_room').setLabel('حد الأعضاء').setStyle(ButtonStyle.Secondary).setEmoji('⏱️'),
+        new ButtonBuilder().setCustomId('region_room').setLabel('ريجن الروم').setStyle(ButtonStyle.Secondary).setEmoji('👤'),
+        new ButtonBuilder().setCustomId('bot_admin').setLabel('بوت اعالي').setStyle(ButtonStyle.Secondary)
+    );
+
+    const row4 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('allow_user').setLabel('سماح').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('deny_user').setLabel('إلغاء السماح').setStyle(ButtonStyle.Danger)
+    );
+
+    return { embeds: [embed], components: [row1, row2, row3, row4] };
 }
 
-client.once('ready', () => {
-    console.log(`Logged in as ${client.user.tag}!`);
-});
+client.once('ready', () => console.log(`Logged in as ${client.user.tag}!`));
 
 client.on('voiceStateUpdate', async (oldState, newState) => {
     const guild = newState.guild || oldState.guild;
     const member = newState.member || oldState.member;
-
     if (!member || member.user.bot) return;
 
-    const userId = member.id;
-    const userData = userVoiceActivity.get(userId) || { voiceTime: 0, joinTimestamp: null };
-    const logChannel = process.env.LOG_CHANNEL_ID ? guild.channels.cache.get(process.env.LOG_CHANNEL_ID) : null;
-
-    // تتبع وقت الVOICE
-    if (!oldState.channelId && newState.channelId) {
-        userData.joinTimestamp = Date.now();
-        userVoiceActivity.set(userId, userData);
-    } else if (oldState.channelId && !newState.channelId) {
-        if (userData.joinTimestamp) {
-            userData.voiceTime += (Date.now() - userData.joinTimestamp);
-            userData.joinTimestamp = null;
-            userVoiceActivity.set(userId, userData);
-        }
+    if (newState.channelId === process.env.JOIN_CHANNEL_ID) {
+        const channel = await guild.channels.create({
+            name: `🔊 | ${member.displayName}`,
+            type: ChannelType.GuildVoice,
+            parent: process.env.CATEGORY_ID
+        });
+        tempVoiceChannels.set(channel.id, member.id);
+        await member.voice.setChannel(channel);
+        setTimeout(async () => {
+            await channel.send(buildTempRoomControlUI(member));
+        }, 1000);
     }
 
-    // إنشاء الروم المؤقت
-    if (newState.channelId && newState.channelId === process.env.JOIN_CHANNEL_ID) {
-        try {
-            const parentCategory = process.env.CATEGORY_ID || null;
-            const fetchedMember = await guild.members.fetch(member.id).catch(() => member);
-            const roomName = `🔊 | ${fetchedMember.displayName}`;
-
-            const channelOptions = {
-                name: roomName,
-                type: ChannelType.GuildVoice,
-                permissionOverwrites: [
-                    { id: guild.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
-                    { id: member.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] }
-                ]
-            };
-
-            if (parentCategory) {
-                channelOptions.parent = parentCategory;
-            }
-
-            const tempVoiceChannel = await guild.channels.create(channelOptions);
-
-            tempVoiceChannels.set(tempVoiceChannel.id, member.id);
-            await member.voice.setChannel(tempVoiceChannel).catch(() => {});
-
-            setTimeout(async () => {
-                const welcomeData = buildTempRoomControlUI(`<@${member.id}>`);
-                await tempVoiceChannel.send(welcomeData).catch(err => console.error("خطأ في إرسال لوحة الروم:", err));
-            }, 500);
-
-            if (logChannel) {
-                const categoryObj = parentCategory ? guild.channels.cache.get(parentCategory) : null;
-                const categoryName = categoryObj ? categoryObj.name : 'No Category';
-                
-                logChannel.send({
-                    embeds: [{
-                        color: 0x00ff87,
-                        title: 'Create Temporary Channel',
-                        fields: [
-                            { name: 'Channel', value: `🔊 ${roomName}`, inline: true },
-                            { name: 'By', value: `<@${member.id}>`, inline: true },
-                            { name: 'In', value: `# ${categoryName}`, inline: true }
-                        ],
-                        timestamp: new Date().toISOString()
-                    }]
-                }).catch(() => {});
-            }
-
-        } catch (error) {
-            console.error('خطأ أثناء إنشاء الروم الصوتي:', error);
-        }
-    }
-
-    // حذف الروم الصوتي إذا فاضي
     if (oldState.channelId && tempVoiceChannels.has(oldState.channelId)) {
-        const voiceChannel = oldState.guild.channels.cache.get(oldState.channelId);
-        if (voiceChannel && voiceChannel.members.size === 0) {
-            tempVoiceChannels.delete(voiceChannel.id);
-            await voiceChannel.delete().catch(() => {});
+        const channel = guild.channels.cache.get(oldState.channelId);
+        if (channel && channel.members.size === 0) {
+            tempVoiceChannels.delete(channel.id);
+            await channel.delete().catch(() => {});
         }
     }
 });
