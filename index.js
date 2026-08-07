@@ -38,15 +38,15 @@ function getControlUI(member) {
         new ButtonBuilder().setCustomId('invite_user').setLabel('دعوة').setStyle(ButtonStyle.Secondary).setEmoji('✉️')
     );
 
+    // تم إزالة زر "صلاحيات" واستبداله ليصبح التحكم عبر أزرار السماح
     const row3 = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('rename_room').setLabel('تغيير الاسم').setStyle(ButtonStyle.Secondary).setEmoji('✏️'),
         new ButtonBuilder().setCustomId('limit_room').setLabel('الحد الأقصى').setStyle(ButtonStyle.Secondary).setEmoji('⏱️'),
         new ButtonBuilder().setCustomId('region_room').setLabel('الريجن').setStyle(ButtonStyle.Secondary).setEmoji('🌍'),
-        new ButtonBuilder().setCustomId('bot_admin').setLabel('صلاحيات').setStyle(ButtonStyle.Secondary).setEmoji('⚙️')
+        new ButtonBuilder().setCustomId('allow_user').setLabel('سماح').setStyle(ButtonStyle.Success)
     );
 
     const row4 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('allow_user').setLabel('سماح').setStyle(ButtonStyle.Success),
         new ButtonBuilder().setCustomId('deny_user').setLabel('إلغاء السماح').setStyle(ButtonStyle.Danger)
     );
 
