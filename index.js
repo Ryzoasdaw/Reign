@@ -20,9 +20,7 @@ const tempVoiceChannels = new Map();
 function getControlUI(member) {
     const embed = new EmbedBuilder()
         .setColor(0x2b2d31)
-        .setTitle('للتحكم في الروم الخاص بك الصوتي المؤقت')
-        .setDescription('المزيد من الخيارات متاحة من خلال هذه الأزرار')
-        .setFooter({ text: `تم إنشاء الروم بواسطة ${member.displayName}`, iconURL: member.user.displayAvatarURL() });
+        .setDescription('**للتحكم في الروم الخاص بك الصوتي المؤقت**\nالمزيد من الخيارات متاحة من خلال هذه الأزرار\n\nتم إنشاء الروم بواسطة <@' + member.id + '>');
 
     const row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('lock_room').setLabel('قفل').setStyle(ButtonStyle.Secondary).setEmoji('🔒'),
